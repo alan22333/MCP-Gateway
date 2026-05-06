@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Gateway 管理后台</title>
+<style>
+  :root {
+    --bg: #f5f6fa; --card: #fff; --text: #2d3436; --muted: #636e72;
+    --border: #dfe6e9; --primary: #6c5ce7; --danger: #d63031;
+    --success: #00b894; --warning: #fdcb6e; --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  header { background: linear-gradient(135deg, #6c5ce7, #a29bfe); color: #fff; padding: 28px 0; margin-bottom: 28px; }
+  header .container { display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 1.5rem; font-weight: 700; }
+  header .badge { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 2rem; font-weight: 700; color: var(--primary); margin-top: 4px; }
+  .stat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .stat-dot.on { background: var(--success); }
+  .stat-dot.off { background: var(--danger); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
+  .tab { padding: 10px 24px; border: none; background: var(--card); border-radius: var(--radius) var(--radius) 0 0; cursor: pointer; font-size: 0.9rem; color: var(--muted); transition: all 0.15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--card); color: var(--primary); font-weight: 600; box-shadow: 0 -2px 0 var(--primary); }
+
+  .panel { display: none; background: var(--card); border-radius: 0 var(--radius) var(--radius) var(--radius); padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .panel.active { display: block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8f9ff; }
+
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  .tag-get { background: #dfe6fd; color: #3867d6; }
+  .tag-post { background: #d5f5e3; color: #1e824c; }
+  .tag-mcp { background: #eee; color: #636e72; }
+  .tag-web { background: #ffe6e0; color: #e17055; }
+
+  .btn { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-danger { background: none; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 4px 12px; font-size: 0.76rem; }
+  .btn-xs { padding: 2px 8px; font-size: 0.72rem; border-radius: 4px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: var(--muted); }
+  input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s; background: #fafbfc; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
+  textarea { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.82rem; resize: vertical; }
+  input[type="file"] { padding: 8px; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-actions { display: flex; gap: 10px; margin-top: 20px; }
+
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+  .alert { padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 16px; }
+  .alert-warn { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+  .alert-success { background: #d5f5e3; color: #1e824c; border: 1px solid var(--success); }
+
+  /* Toggle switch */
+  .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider { position: absolute; cursor: pointer; inset: 0; background: #ccc; border-radius: 24px; transition: 0.2s; }
+  .toggle .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+  .toggle input:checked + .slider { background: var(--success); }
+  .toggle input:checked + .slider:before { transform: translateX(20px); }
+
+  /* Import drop zone */
+  .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 30px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafbfc; }
+  .drop-zone:hover { border-color: var(--primary); background: #f8f7ff; }
+  .drop-zone.dragover { border-color: var(--primary); background: #f0eeff; }
+
+  .result-box { background: #2d3436; color: #dfe6e9; padding: 16px; border-radius: 8px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.82rem; white-space: pre-wrap; max-height: 500px; overflow-y: auto; margin-top: 12px; }
+  .result-box.error { color: #ff7675; }
+  .empty-state { text-align: center; padding: 40px; color: var(--muted); }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; }
+
+  .disabled-row td { color: #bbb; }
+  .disabled-row .tag { opacity: 0.5; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+  .toast { padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 0.85rem; animation: slideIn 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .toast-success { background: var(--success); }
+  .toast-error { background: var(--danger); }
+  .toast-warn { background: var(--warning); color: #2d3436; }
+  @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  @media (max-width: 640px) {
+    .form-row { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div>
+      <h1>MCP Gateway 管理后台</h1>
+      <span style="opacity:0.8;font-size:0.85rem;">AI Model Context Protocol 网关</span>
+    </div>
+    <span class="badge">v1.1.0</span>
+  </div>
+</header>
+
+<div class="container">
+  <!-- 统计卡片 -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">已注册工具</div>
+      <div class="value" id="stat-tools">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">今日调用次数</div>
+      <div class="value" id="stat-calls">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">活跃 SSE 会话</div>
+      <div class="value" id="stat-sessions">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">模拟后端</div>
+      <div class="value" style="font-size:1.2rem;" id="stat-backend">
+        <span class="stat-dot off"></span>检测中…
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签页 -->
+  <div class="tabs">
+    <button class="tab active" data-panel="panel-tools">工具管理</button>
+    <button class="tab" data-panel="panel-import">📥 导入</button>
+    <button class="tab" data-panel="panel-tester">🧪 测试</button>
+    <button class="tab" data-panel="panel-logs">📋 调用历史</button>
+    <button class="tab" data-panel="panel-sessions">🔌 会话</button>
+  </div>
+
+  <!-- ====== 面板1: 工具管理 ====== -->
+  <div id="panel-tools" class="panel active">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 style="font-size:1.1rem;">已注册工具</h2>
+      <button class="btn btn-primary" onclick="showCreateForm()">+ 新建工具</button>
+    </div>
+
+    <!-- 新建表单 -->
+    <div id="create-form" style="display:none;background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:20px;border:1px solid #e8e8ff;">
+      <h3 style="margin-bottom:16px;font-size:1rem;">新建工具配置</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>工具名称 *</label>
+          <input id="new-name" placeholder="如: get_order_detail" />
+        </div>
+        <div class="form-group">
+          <label>HTTP 方法 *</label>
+          <select id="new-method"><option>GET</option><option>POST</option></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>描述 *</label>
+        <input id="new-desc" placeholder="如: 根据订单 ID 查询订单详情" />
+      </div>
+      <div class="form-group">
+        <label>后端地址 *</label>
+        <input id="new-url" placeholder="如: http://localhost:9090/api/orders/{id}" />
+        <div class="hint">支持 {param} 路径占位符</div>
+      </div>
+      <div class="form-group">
+        <label>Input Schema (JSON, 可选)</label>
+        <textarea id="new-schema" rows="4" placeholder='{"id":{"type":"string","description":"订单ID"}}'></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="createTool()">确认创建</button>
+        <button class="btn" style="background:#eee;" onclick="hideCreateForm()">取消</button>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>ID</th><th>工具名</th><th>描述</th><th>方法</th><th>后端地址</th><th style="width:70px;">启用</th><th>操作</th></tr></thead>
+      <tbody id="tools-tbody"></tbody>
+    </table>
+    <div id="tools-empty" class="empty-state" style="display:none;">
+      <div class="icon">📦</div><p>还没有注册任何工具</p>
+      <button class="btn btn-primary" style="margin-top:12px;" onclick="showCreateForm()">创建第一个</button>
+    </div>
+  </div>
+
+  <!-- ====== 面板2: OpenAPI 导入 ====== -->
+  <div id="panel-import" class="panel">
+    <h2 style="font-size:1.1rem;margin-bottom:16px;">从 OpenAPI / Swagger 批量导入</h2>
+    <div class="two-col">
+      <div>
+        <div class="form-group">
+          <label>后端基础地址</label>
+          <input id="import-base-url" value="http://localhost:9090" placeholder="http://localhost:9090" />
+          <div class="hint">API 路径将拼接在此地址后，如 /api/orders → http://localhost:9090/api/orders</div>
+        </div>
+        <div class="drop-zone" id="drop-zone">
+          <p style="font-size:1.2rem;margin-bottom:4px;">📄</p>
+          <p>拖拽 OpenAPI JSON/YAML 文件到此处</p>
+          <p style="font-size:0.8rem;color:var(--muted);">或点击选择文件</p>
+          <input type="file" id="import-file" accept=".json,.yaml,.yml" style="display:none;" />
+        </div>
+        <button class="btn btn-primary" onclick="importOpenAPI()" style="margin-top:16px;width:100%;">开始导入</button>
+      </div>
+      <div>
+        <div class="alert alert-warn" style="font-size:0.82rem;">
+          <strong>提示</strong><br>
+          上传 OpenAPI 3.0 规范的 JSON 或 YAML 文件，系统将自动：<br>
+          • 提取每个接口路径和方法<br>
+          • 用 operationId 或 路径 生成工具名<br>
+          • 解析参数和请求体作为 Input Schema
+        </div>
+        <div id="import-result" class="result-box" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== 面板3: 工具测试 ====== -->
+  <div id="panel-tester" class="panel">
+    <h2 style="font-size:1.1rem;margin-bottom:16px;">手动工具测试</h2>
+    <div id="backend-warn" class="alert alert-warn" style="display:none;">
+      ⚠ 模拟后端不可达。请先启动: <code style="background:#ffeeba;padding:2px 6px;border-radius:3px;">go run cmd/mock-backend/main.go</code>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>选择工具</label>
+        <select id="test-tool"><option value="">-- 选择工具 --</option></select>
+      </div>
+      <div class="form-group">
+        <label>方法</label>
+        <input id="test-method" readonly style="background:#eee;cursor:not-allowed;" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>目标地址</label>
+      <input id="test-url" readonly style="background:#eee;cursor:not-allowed;font-family:monospace;font-size:0.82rem;" />
+    </div>
+    <div class="form-group">
+      <label>参数 JSON</label>
+      <textarea id="test-args" rows="5" placeholder='{"customer":"CUST-101"}'></textarea>
+    </div>
+    <button class="btn btn-primary" id="btn-test" onclick="testTool()">发送测试请求</button>
+    <div id="test-result" class="result-box" style="display:none;"></div>
+  </div>
+
+  <!-- ====== 面板4: 调用历史 ====== -->
+  <div id="panel-logs" class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 style="font-size:1.1rem;">调用历史</h2>
+      <button class="btn btn-primary" onclick="refreshLogs()">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>时间</th><th>工具名</th><th>来源</th><th>状态</th><th>耗时</th><th>参数</th></tr></thead>
+      <tbody id="logs-tbody"></tbody>
+    </table>
+    <div id="logs-empty" class="empty-state" style="display:none;">
+      <div class="icon">📋</div><p>暂无调用记录</p>
+    </div>
+  </div>
+
+  <!-- ====== 面板5: SSE 会话 ====== -->
+  <div id="panel-sessions" class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 style="font-size:1.1rem;">活跃 SSE 连接</h2>
+      <button class="btn btn-primary" onclick="refreshSessions()">刷新</button>
+    </div>
+    <table>
+      <thead><tr><th>会话 ID</th></tr></thead>
+      <tbody id="sessions-tbody"></tbody>
+    </table>
+    <div id="sessions-empty" class="empty-state" style="display:none;">
+      <div class="icon">🔌</div><p>当前没有活跃的 SSE 连接</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ====== 初始化 ======
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  // 文件拖拽
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('import-file');
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; }
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      dropZone.querySelector('p:first-child').textContent = '📄 ' + fileInput.files[0].name;
+    }
+  });
+
+  refreshAll();
+  checkBackend();
+  setInterval(refreshSessions, 5000);
+  setInterval(checkBackend, 15000);
+});
+
+// ====== API ======
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// ====== 后端健康检测 ======
+async function checkBackend() {
+  const dot = document.querySelector('#stat-backend .stat-dot');
+  const text = document.getElementById('stat-backend');
+  const warn = document.getElementById('backend-warn');
+  const btn = document.getElementById('btn-test');
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    if (data.backend === 'online') {
+      dot.className = 'stat-dot on';
+      text.innerHTML = '<span class="stat-dot on"></span>运行中';
+      if (warn) warn.style.display = 'none';
+      if (btn) btn.disabled = false;
+      return;
+    }
+  } catch(e) {}
+  dot.className = 'stat-dot off';
+  text.innerHTML = '<span class="stat-dot off"></span>未启动';
+  if (warn) warn.style.display = 'block';
+  if (btn) btn.disabled = true;
+}
+
+// ====== 刷新全部 ======
+async function refreshAll() {
+  await Promise.all([refreshTools(), refreshSessions(), refreshLogs()]);
+}
+
+// ====== 工具列表 ======
+async function refreshTools() {
+  try {
+    const tools = await api('/api/tools');
+    const tbody = document.getElementById('tools-tbody');
+    const empty = document.getElementById('tools-empty');
+    const testerSelect = document.getElementById('test-tool');
+
+    document.getElementById('stat-tools').textContent = tools.length;
+    testerSelect.innerHTML = '<option value="">-- 选择工具 --</option>';
+
+    if (tools.length === 0) {
+      tbody.innerHTML = ''; empty.style.display = 'block'; return;
+    }
+    empty.style.display = 'none';
+
+    tbody.innerHTML = tools.map(t => `
+      <tr class="${t.enabled ? '' : 'disabled-row'}">
+        <td>${t.ID}</td>
+        <td><strong>${esc(t.tool_name)}</strong></td>
+        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.description)}">${esc(t.description)}</td>
+        <td><span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span></td>
+        <td style="font-family:monospace;font-size:0.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.backend_url)}">${esc(t.backend_url)}</td>
+        <td>
+          <label class="toggle">
+            <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleTool(${t.ID}, this.checked)" />
+            <span class="slider"></span>
+          </label>
+        </td>
+        <td><button class="btn btn-danger btn-xs" onclick="deleteTool(${t.ID})">删除</button></td>
+      </tr>
+    `).join('');
+
+    tools.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.tool_name;
+      opt.textContent = `${t.tool_name} (${t.http_method})${t.enabled ? '' : ' [禁用]'}`;
+      opt.dataset.method = t.http_method;
+      opt.dataset.url = t.backend_url;
+      opt.dataset.schema = JSON.stringify(t.input_schema || {});
+      testerSelect.appendChild(opt);
+    });
+  } catch (e) {
+    toast('加载工具列表失败: ' + e.message, 'error');
+  }
+}
+
+// ====== 启用/禁用切换 ======
+async function toggleTool(id, enabled) {
+  try {
+    await fetch('/api/tools/' + id + '/toggle', { method: 'PUT' });
+    toast(enabled ? '工具已启用' : '工具已禁用', 'success');
+    await refreshTools();
+  } catch (e) {
+    toast('操作失败: ' + e.message, 'error');
+    await refreshTools(); // 还原状态
+  }
+}
+
+// ====== 占位符 ======
+function buildPlaceholder(def) {
+  if (!def || typeof def !== 'object') return '"请填写"';
+  const type = def.type || 'string';
+  const desc = def.description || '';
+  const m = desc.match(/[如例如][:：]?\s*([A-Za-z0-9_\-一-龥]+)/);
+  if (m) {
+    const ex = m[1].replace(/[等或]$/, '');
+    if (type === 'number' && !isNaN(parseFloat(ex))) return parseFloat(ex);
+    return ex;
+  }
+  switch (type) {
+    case 'number': case 'integer': return 0;
+    case 'boolean': return false;
+    default: return '请填写';
+  }
+}
+
+function buildPlaceholders(schema) {
+  const r = {}; if (!schema) return r;
+  for (const [k, def] of Object.entries(schema)) r[k] = buildPlaceholder(def);
+  return r;
+}
+
+// ====== 创建 / 删除 ======
+function showCreateForm() { document.getElementById('create-form').style.display = 'block'; }
+function hideCreateForm() { document.getElementById('create-form').style.display = 'none'; }
+
+async function createTool() {
+  const name = document.getElementById('new-name').value.trim();
+  const method = document.getElementById('new-method').value;
+  const desc = document.getElementById('new-desc').value.trim();
+  const url = document.getElementById('new-url').value.trim();
+  const schemaStr = document.getElementById('new-schema').value.trim();
+  if (!name || !desc || !url) { toast('请填写工具名称、描述和后端地址', 'error'); return; }
+  let schema = {};
+  if (schemaStr) { try { schema = JSON.parse(schemaStr); } catch { toast('Schema 不是合法 JSON', 'error'); return; } }
+  try {
+    await api('/api/tools', {
+      method: 'POST',
+      body: JSON.stringify({ tool_name: name, description: desc, input_schema: schema, backend_url: url, http_method: method })
+    });
+    toast('创建成功', 'success');
+    hideCreateForm();
+    ['new-name','new-desc','new-url','new-schema'].forEach(id => document.getElementById(id).value = '');
+    await refreshTools();
+  } catch (e) { toast('创建失败: ' + e.message, 'error'); }
+}
+
+async function deleteTool(id) {
+  if (!confirm('确定要删除该工具吗？')) return;
+  try { await api('/api/tools/' + id, { method: 'DELETE' }); toast('已删除', 'success'); await refreshTools(); }
+  catch (e) { toast('删除失败: ' + e.message, 'error'); }
+}
+
+// ====== OpenAPI 导入 ======
+async function importOpenAPI() {
+  const fileInput = document.getElementById('import-file');
+  const baseURL = document.getElementById('import-base-url').value.trim() || 'http://localhost:9090';
+  const resultBox = document.getElementById('import-result');
+
+  if (!fileInput.files.length) { toast('请先选择一个 OpenAPI 文件', 'warn'); return; }
+
+  const file = fileInput.files[0];
+  const text = await file.text();
+
+  resultBox.style.display = 'block';
+  resultBox.className = 'result-box';
+  resultBox.textContent = '导入中...';
+
+  try {
+    const res = await fetch('/api/tools/import?base_url=' + encodeURIComponent(baseURL), {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/json' },
+      body: text
+    });
+    const data = await res.json();
+    if (res.ok) {
+      resultBox.textContent = '✓ ' + data.message;
+      resultBox.className = 'result-box';
+      toast(data.message, 'success');
+      await refreshTools();
+    } else {
+      resultBox.textContent = '✗ ' + (data.error || '导入失败');
+      resultBox.className = 'result-box error';
+      toast('导入失败: ' + (data.error || ''), 'error');
+    }
+  } catch (e) {
+    resultBox.textContent = '✗ ' + e.message;
+    resultBox.className = 'result-box error';
+    toast('导入失败: ' + e.message, 'error');
+  }
+}
+
+// ====== 调用日志 ======
+async function refreshLogs() {
+  const tbody = document.getElementById('logs-tbody');
+  const empty = document.getElementById('logs-empty');
+  try {
+    const data = await api('/api/logs?limit=50');
+    document.getElementById('stat-calls').textContent = data.total;
+    if (data.logs.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+
+    tbody.innerHTML = data.logs.map(l => {
+      const time = new Date(l.CreatedAt).toLocaleString('zh-CN');
+      const statusTag = l.error_msg
+        ? '<span class="tag" style="background:#ffe6e0;color:#d63031;">失败</span>'
+        : '<span class="tag tag-post">' + l.status_code + '</span>';
+      const callerTag = '<span class="tag tag-' + (l.caller === 'WEB' ? 'web' : 'mcp') + '">' + l.caller + '</span>';
+      const argsPreview = esc((l.request_args || '').substring(0, 60));
+      return `<tr>
+        <td style="white-space:nowrap;font-size:0.82rem;">${time}</td>
+        <td><strong>${esc(l.tool_name)}</strong></td>
+        <td>${callerTag}</td>
+        <td>${statusTag}</td>
+        <td style="white-space:nowrap;">${l.latency_ms}ms</td>
+        <td style="font-family:monospace;font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(l.request_args)}">${argsPreview}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) { /* 静默 */ }
+}
+
+// ====== 会话列表 ======
+async function refreshSessions() {
+  try {
+    const data = await api('/api/sessions');
+    document.getElementById('stat-sessions').textContent = data.total;
+    const tbody = document.getElementById('sessions-tbody');
+    const empty = document.getElementById('sessions-empty');
+    if (data.sessions.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    tbody.innerHTML = data.sessions.map(s => `
+      <tr><td><span style="font-family:monospace;color:var(--primary);">${esc(s.id)}</span></td></tr>
+    `).join('');
+  } catch (e) {}
+}
+
+// ====== 工具测试 ======
+document.getElementById('test-tool').addEventListener('change', function() {
+  const opt = this.selectedOptions[0];
+  const resultEl = document.getElementById('test-result'); resultEl.style.display = 'none';
+  if (!opt || !opt.value) {
+    document.getElementById('test-method').value = '';
+    document.getElementById('test-url').value = '';
+    document.getElementById('test-args').value = '';
+    return;
+  }
+  document.getElementById('test-method').value = opt.dataset.method;
+  document.getElementById('test-url').value = opt.dataset.url;
+  try {
+    const schema = JSON.parse(opt.dataset.schema);
+    document.getElementById('test-args').value = JSON.stringify(buildPlaceholders(schema), null, 2);
+  } catch { document.getElementById('test-args').value = '{}'; }
+});
+
+async function testTool() {
+  const toolName = document.getElementById('test-tool').value;
+  if (!toolName) { toast('请先选择一个工具', 'error'); return; }
+  let args;
+  try { args = JSON.parse(document.getElementById('test-args').value); }
+  catch { toast('参数不是合法 JSON', 'error'); return; }
+
+  const resultBox = document.getElementById('test-result');
+  resultBox.style.display = 'block'; resultBox.className = 'result-box'; resultBox.textContent = '请求中...';
+
+  try {
+    const data = await api('/api/tools/test', {
+      method: 'POST',
+      body: JSON.stringify({ tool_name: toolName, args: args })
+    });
+    resultBox.textContent = JSON.stringify(data, null, 2);
+    toast('测试完成', 'success');
+    refreshLogs(); // 刷新日志
+  } catch (e) {
+    const msg = e.message || '';
+    resultBox.className = 'result-box error';
+    if (msg.includes('connection refused')) {
+      resultBox.textContent = '❌ 无法连接模拟后端 (localhost:9090)\n\n请先在新终端运行:\n  go run cmd/mock-backend/main.go';
+      toast('模拟后端未启动', 'warn');
+    } else {
+      resultBox.textContent = '❌ ' + msg;
+      toast('测试失败: ' + msg, 'error');
+    }
+    refreshLogs();
+  }
+}
+
+// ====== 工具函数 ======
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function toast(msg, type) {
+  const container = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+</script>
+</body>
+</html>

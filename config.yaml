@@ -1,0 +1,7 @@
+# MCP Gateway 配置文件
+server:
+  port: 8080         # 网关监听端口
+
+database:
+  driver: sqlite     # 数据库驱动，可选 sqlite / mysql
+  dsn: gateway.db    # SQLite 文件路径 或 MySQL DSN
