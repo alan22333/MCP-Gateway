@@ -11,17 +11,27 @@ import (
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
+	Cache    CacheConfig    `mapstructure:"cache"`
 }
 
 // ServerConfig 服务器相关配置
 type ServerConfig struct {
-	Port int `mapstructure:"port"` // 监听端口
+	Port int `mapstructure:"port"`
 }
 
 // DatabaseConfig 数据库相关配置
 type DatabaseConfig struct {
-	Driver string `mapstructure:"driver"` // 数据库驱动: sqlite / mysql
-	DSN    string `mapstructure:"dsn"`    // 数据库连接字符串
+	Driver string `mapstructure:"driver"`
+	DSN    string `mapstructure:"dsn"`
+}
+
+// CacheConfig 缓存相关配置
+type CacheConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`        // 是否启用缓存
+	RedisAddr     string `mapstructure:"redis_addr"`     // Redis 地址，如 "localhost:6379"
+	RedisPassword string `mapstructure:"redis_password"` // Redis 密码
+	RedisDB       int    `mapstructure:"redis_db"`       // Redis DB 编号
+	TTL           int    `mapstructure:"ttl"`            // 缓存过期时间（秒）
 }
 
 // Load 从 config.yaml 加载配置

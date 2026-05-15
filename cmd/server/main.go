@@ -3,11 +3,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
+	"time"
 
+	"mcp-gateway-go-demo/internal/cache"
 	"mcp-gateway-go-demo/internal/config"
 	"mcp-gateway-go-demo/internal/handler"
 	"mcp-gateway-go-demo/internal/model"
@@ -47,7 +54,29 @@ func main() {
 	logger.Info("数据库表结构就绪")
 
 	httpProxy := proxy.NewHttpProxy()
-	svc := service.NewMcpService(apiRepo, httpProxy, logger)
+
+	// 初始化缓存：优先 Redis，不可用时回退内存缓存
+	var toolCache cache.ToolCache
+	cacheTTL := time.Duration(cfg.Cache.TTL) * time.Second
+	if cfg.Cache.Enabled && cfg.Cache.RedisAddr != "" {
+		redisCache, err := cache.NewRedisCache(cache.RedisConfig{
+			Addr:     cfg.Cache.RedisAddr,
+			Password: cfg.Cache.RedisPassword,
+			DB:       cfg.Cache.RedisDB,
+		})
+		if err != nil {
+			logger.Warn("Redis 连接失败，回退到内存缓存", zap.Error(err))
+			toolCache = cache.NewMemCache()
+		} else {
+			toolCache = redisCache
+			logger.Info("Redis 缓存已连接", zap.String("addr", cfg.Cache.RedisAddr))
+		}
+	} else {
+		toolCache = cache.NewMemCache()
+		logger.Info("使用内存缓存（未配置 Redis）")
+	}
+
+	svc := service.NewMcpService(apiRepo, httpProxy, toolCache, cacheTTL, logger)
 	sessionMgr := handler.NewSessionManager()
 	mcpHandler := handler.NewMcpHandler(sessionMgr, svc, logger)
 
@@ -85,13 +114,43 @@ func main() {
 	r.Static("/static", "./web/static")
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	logger.Info("MCP Gateway 启动",
-		zap.String("address", addr),
-		zap.String("dashboard", "http://localhost"+addr),
-	)
-	if err := r.Run(addr); err != nil {
-		logger.Fatal("服务启动失败", zap.Error(err))
+
+	// 5. 启动 HTTP Server（显式创建 http.Server 以支持优雅关闭）
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: r,
 	}
+
+	// 在 goroutine 中启动监听，主 goroutine 等待退出信号
+	go func() {
+		logger.Info("MCP Gateway 启动",
+			zap.String("address", addr),
+			zap.String("dashboard", "http://localhost"+addr),
+		)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("服务异常退出", zap.Error(err))
+		}
+	}()
+
+	// 6. 等待系统信号（Ctrl+C 或 kill）
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+	logger.Info("收到退出信号，开始优雅关闭...", zap.String("signal", sig.String()))
+
+	// 7. 优雅关闭：30 秒内不再接受新请求，等待已有请求完成
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("服务关闭超时（30s内有请求未完成）", zap.Error(err))
+	}
+
+	// 8. 清理数据库连接
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.Close()
+	}
+	logger.Info("服务已安全退出")
 }
 
 // ---------- 工具管理 ----------
@@ -247,7 +306,7 @@ func handleListSessions(mgr *handler.SessionManager) gin.HandlerFunc {
 
 func handleHealth(p *proxy.HttpProxy) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, err := p.Forward(&proxy.ProxyRequest{
+		_, err := p.Forward(c.Request.Context(), &proxy.ProxyRequest{
 			Method: "GET",
 			URL:    "http://localhost:9090/",
 		})
@@ -272,7 +331,7 @@ func handleTestTool(svc *service.McpService) gin.HandlerFunc {
 			return
 		}
 
-		proxyResp, mcpResp := svc.CallTool(input.ToolName, input.Args, "WEB")
+		proxyResp, mcpResp := svc.CallTool(c.Request.Context(), input.ToolName, input.Args, "WEB")
 		if mcpResp.Error != nil {
 			c.JSON(502, gin.H{"error": mcpResp.Error.Message})
 			return

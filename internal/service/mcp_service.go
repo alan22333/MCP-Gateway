@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"mcp-gateway-go-demo/internal/cache"
 	"mcp-gateway-go-demo/internal/model"
 	"mcp-gateway-go-demo/internal/proxy"
 	"mcp-gateway-go-demo/internal/repository"
@@ -15,51 +17,83 @@ import (
 
 // McpService MCP 服务核心，实现 handler.RequestProcessor 接口
 type McpService struct {
-	repo   *repository.ApiToolRepo
-	proxy  *proxy.HttpProxy
-	logger *zap.Logger
+	repo     *repository.ApiToolRepo
+	proxy    *proxy.HttpProxy
+	cache    cache.ToolCache // 请求去重缓存（Redis 或内存）
+	cacheTTL time.Duration
+	logger   *zap.Logger
 }
 
-func NewMcpService(repo *repository.ApiToolRepo, proxy *proxy.HttpProxy, logger *zap.Logger) *McpService {
-	return &McpService{repo: repo, proxy: proxy, logger: logger}
+func NewMcpService(repo *repository.ApiToolRepo, p *proxy.HttpProxy, c cache.ToolCache, cacheTTL time.Duration, logger *zap.Logger) *McpService {
+	return &McpService{repo: repo, proxy: p, cache: c, cacheTTL: cacheTTL, logger: logger}
 }
 
-// Process 处理 JSON-RPC 请求的入口，根据 method 分发到不同处理逻辑
-func (s *McpService) Process(req *mcp.RPCRequest) *mcp.RPCResponse {
+// Process 处理 JSON-RPC 请求的入口
+func (s *McpService) Process(ctx context.Context, req *mcp.RPCRequest) *mcp.RPCResponse {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
 	case "tools/list":
 		return s.handleToolsList(req)
 	case "tools/call":
-		return s.handleToolsCall(req, "MCP")
+		return s.handleToolsCall(ctx, req, "MCP")
 	default:
 		s.logger.Warn("不支持的方法", zap.String("method", req.Method))
 		return mcp.NewError(req.ID, mcp.ErrCodeMethod, "不支持的方法: "+req.Method)
 	}
 }
 
-// CallTool 供外部（handler）直接调用，返回代理响应 + MCP 响应
-func (s *McpService) CallTool(toolName string, args json.RawMessage, caller string) (*proxy.ProxyResponse, *mcp.RPCResponse) {
+// CallTool 供外部（handler）直接调用
+func (s *McpService) CallTool(ctx context.Context, toolName string, args json.RawMessage, caller string) (*proxy.ProxyResponse, *mcp.RPCResponse) {
 	tool, err := s.repo.GetByToolName(toolName)
 	if err != nil {
 		return nil, mcp.NewError(nil, mcp.ErrCodeMethod, fmt.Sprintf("工具不存在: %s", toolName))
 	}
 
+	// 1. 校验参数
+	if v := validateArgs(tool.InputSchema, args); !v.Valid {
+		s.logger.Warn("参数校验失败", zap.String("tool", toolName), zap.Any("issues", v.Issues))
+		msg, _ := json.Marshal(map[string]interface{}{
+			"error":  "参数校验失败，请修正后重试",
+			"tool":   toolName,
+			"issues": v.Issues,
+		})
+		return nil, mcp.NewError(nil, mcp.ErrCodeInvalid, string(msg))
+	}
+
+	// 2. 查缓存（group 按 backend URL 路径前缀划分）
+	group := cache.CacheGroup(tool.BackendUrl)
+	if entry, ok := s.cache.Get(ctx, group, toolName, args); ok {
+		s.logger.Info("缓存命中", zap.String("tool", toolName), zap.String("group", group))
+		callResult := &mcp.CallToolResult{
+			Content: []mcp.ContentItem{{Type: "text", Text: string(entry.Result)}},
+		}
+		return &proxy.ProxyResponse{StatusCode: 200, Body: entry.Result}, mcp.NewSuccess(nil, callResult)
+	}
+
+	// 3. 转发到后端
 	start := time.Now()
-	proxyResp, err := s.proxy.Forward(&proxy.ProxyRequest{
+	proxyResp, err := s.proxy.Forward(ctx, &proxy.ProxyRequest{
 		Method: tool.HttpMethod,
 		URL:    tool.BackendUrl,
 		Args:   args,
 	})
 	latency := time.Since(start).Milliseconds()
-
-	// 记录调用日志
 	s.logCall(toolName, string(args), proxyResp, err, latency, caller)
 
 	if err != nil {
 		s.logger.Error("后端请求失败", zap.Error(err))
 		return nil, mcp.NewError(nil, mcp.ErrCodeInternal, "后端请求失败: "+err.Error())
+	}
+
+	// 4. 缓存处理
+	if tool.HttpMethod == "GET" && proxyResp.StatusCode == 200 {
+		// 只读查询 → 写入缓存
+		s.cache.Set(ctx, group, toolName, args, json.RawMessage(proxyResp.Body), s.cacheTTL)
+	} else if tool.HttpMethod != "GET" && proxyResp.StatusCode >= 200 && proxyResp.StatusCode < 300 {
+		// 写操作（POST/PUT/DELETE）成功 → 清空同组缓存，防止后续 GET 返回脏数据
+		s.cache.InvalidateGroup(ctx, group)
+		s.logger.Info("写操作后已清除同组缓存", zap.String("tool", toolName), zap.String("group", group))
 	}
 
 	var result interface{}
@@ -91,7 +125,6 @@ func (s *McpService) handleInitialize(req *mcp.RPCRequest) *mcp.RPCResponse {
 	return mcp.NewSuccess(req.ID, result)
 }
 
-// handleToolsList 只返回已启用的工具
 func (s *McpService) handleToolsList(req *mcp.RPCRequest) *mcp.RPCResponse {
 	tools, err := s.repo.GetEnabled()
 	if err != nil {
@@ -108,7 +141,7 @@ func (s *McpService) handleToolsList(req *mcp.RPCRequest) *mcp.RPCResponse {
 	return mcp.NewSuccess(req.ID, &mcp.ToolsListResult{Tools: mcpTools})
 }
 
-func (s *McpService) handleToolsCall(req *mcp.RPCRequest, caller string) *mcp.RPCResponse {
+func (s *McpService) handleToolsCall(ctx context.Context, req *mcp.RPCRequest, caller string) *mcp.RPCResponse {
 	var params mcp.CallToolParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return mcp.NewError(req.ID, mcp.ErrCodeInvalid, "参数解析失败: "+err.Error())
@@ -116,32 +149,72 @@ func (s *McpService) handleToolsCall(req *mcp.RPCRequest, caller string) *mcp.RP
 	if params.Name == "" {
 		return mcp.NewError(req.ID, mcp.ErrCodeInvalid, "缺少工具名称")
 	}
-	return s.doToolsCall(req.ID, params, caller)
+	return s.doToolsCall(ctx, req.ID, params, caller)
 }
 
-func (s *McpService) doToolsCall(id interface{}, params mcp.CallToolParams, caller string) *mcp.RPCResponse {
+func (s *McpService) doToolsCall(ctx context.Context, id interface{}, params mcp.CallToolParams, caller string) *mcp.RPCResponse {
 	tool, err := s.repo.GetByToolName(params.Name)
 	if err != nil {
 		s.logger.Warn("工具不存在", zap.String("tool", params.Name))
 		return mcp.NewError(id, mcp.ErrCodeMethod, fmt.Sprintf("工具不存在: %s", params.Name))
 	}
 
-	s.logger.Info("代理请求", zap.String("tool", params.Name), zap.String("method", tool.HttpMethod), zap.String("url", tool.BackendUrl))
+	// ── 1. 参数校验 ──
+	if v := validateArgs(tool.InputSchema, params.Arguments); !v.Valid {
+		s.logger.Warn("参数校验失败",
+			zap.String("tool", params.Name),
+			zap.Any("issues", v.Issues),
+		)
+		// 将校验错误包装为 AI 可读的格式
+		msg, _ := json.Marshal(map[string]interface{}{
+			"error":  "参数校验失败，请修正后重试",
+			"tool":   params.Name,
+			"issues": v.Issues,
+		})
+		return mcp.NewError(id, mcp.ErrCodeInvalid, string(msg))
+	}
+
+	// ── 2. 缓存检查（按 backend URL 路径前缀分组）──
+	group := cache.CacheGroup(tool.BackendUrl)
+	if entry, ok := s.cache.Get(ctx, group, params.Name, params.Arguments); ok {
+		s.logger.Info("缓存命中", zap.String("tool", params.Name), zap.String("group", group))
+		callResult := &mcp.CallToolResult{
+			Content: []mcp.ContentItem{{Type: "text", Text: string(entry.Result)}},
+		}
+		return mcp.NewSuccess(id, callResult)
+	}
+
+	// ── 3. 代理转发 ──
+	s.logger.Info("代理请求",
+		zap.String("tool", params.Name),
+		zap.String("method", tool.HttpMethod),
+		zap.String("url", tool.BackendUrl),
+		zap.String("group", group),
+	)
 
 	start := time.Now()
-	proxyResp, err := s.proxy.Forward(&proxy.ProxyRequest{
+	proxyResp, err := s.proxy.Forward(ctx, &proxy.ProxyRequest{
 		Method: tool.HttpMethod,
 		URL:    tool.BackendUrl,
 		Args:   params.Arguments,
 	})
 	latency := time.Since(start).Milliseconds()
-
-	// 记录调用日志
 	s.logCall(params.Name, string(params.Arguments), proxyResp, err, latency, caller)
 
 	if err != nil {
 		s.logger.Error("后端请求失败", zap.Error(err))
 		return mcp.NewError(id, mcp.ErrCodeInternal, "后端请求失败: "+err.Error())
+	}
+
+	// ── 4. 缓存处理 ──
+	if tool.HttpMethod == "GET" && proxyResp.StatusCode == 200 {
+		// 只读查询 → 写入缓存
+		s.cache.Set(ctx, group, params.Name, params.Arguments, json.RawMessage(proxyResp.Body), s.cacheTTL)
+		s.logger.Debug("已写入缓存", zap.String("tool", params.Name), zap.String("group", group))
+	} else if tool.HttpMethod != "GET" && proxyResp.StatusCode >= 200 && proxyResp.StatusCode < 300 {
+		// 写操作成功 → 清空同组缓存，防止脏读
+		s.cache.InvalidateGroup(ctx, group)
+		s.logger.Info("写操作后已清除同组缓存", zap.String("tool", params.Name), zap.String("group", group))
 	}
 
 	var result interface{}
@@ -156,13 +229,12 @@ func (s *McpService) doToolsCall(id interface{}, params mcp.CallToolParams, call
 	return mcp.NewSuccess(id, callResult)
 }
 
-// logCall 记录调用日志到数据库，异步写，不影响主流程
 func (s *McpService) logCall(toolName, args string, resp *proxy.ProxyResponse, err error, latency int64, caller string) {
 	log := &model.CallLog{
-		ToolName:  toolName,
+		ToolName:    toolName,
 		RequestArgs: args,
-		LatencyMs: latency,
-		Caller:    caller,
+		LatencyMs:   latency,
+		Caller:      caller,
 	}
 	if resp != nil {
 		log.ResponseBody = string(resp.Body)
@@ -171,7 +243,6 @@ func (s *McpService) logCall(toolName, args string, resp *proxy.ProxyResponse, e
 	if err != nil {
 		log.ErrorMsg = err.Error()
 	}
-	// 异步写入，不阻塞主流程
 	go func() {
 		if createErr := s.repo.CreateCallLog(log); createErr != nil {
 			s.logger.Warn("写入调用日志失败", zap.Error(createErr))

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,6 @@ func TestForwardGET(t *testing.T) {
 		if r.Method != "GET" {
 			t.Errorf("期望 GET, 得到 %s", r.Method)
 		}
-		// 验证 Query 参数
 		name := r.URL.Query().Get("name")
 		if name != "test" {
 			t.Errorf("期望 name=test, 得到 %s", name)
@@ -23,7 +23,7 @@ func TestForwardGET(t *testing.T) {
 	defer backend.Close()
 
 	p := NewHttpProxy()
-	resp, err := p.Forward(&ProxyRequest{
+	resp, err := p.Forward(context.Background(), &ProxyRequest{
 		Method: "GET",
 		URL:    backend.URL,
 		Args:   json.RawMessage(`{"name":"test"}`),
@@ -46,7 +46,7 @@ func TestForwardPOST(t *testing.T) {
 	defer backend.Close()
 
 	p := NewHttpProxy()
-	resp, err := p.Forward(&ProxyRequest{
+	resp, err := p.Forward(context.Background(), &ProxyRequest{
 		Method: "POST",
 		URL:    backend.URL,
 		Args:   json.RawMessage(`{"data":"value"}`),
@@ -60,14 +60,13 @@ func TestForwardPOST(t *testing.T) {
 }
 
 func TestForwardTimeout(t *testing.T) {
-	// 创建一个延迟超过 10 秒的后端，验证超时
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(15 * time.Second)
 	}))
 	defer slow.Close()
 
 	p := NewHttpProxy()
-	_, err := p.Forward(&ProxyRequest{
+	_, err := p.Forward(context.Background(), &ProxyRequest{
 		Method: "GET",
 		URL:    slow.URL,
 		Args:   nil,
@@ -79,11 +78,9 @@ func TestForwardTimeout(t *testing.T) {
 
 func TestForwardPathParamSubstitution(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 验证路径中包含替换后的值
 		if r.URL.Path != "/api/orders/ORD-001" {
 			t.Errorf("路径期望 /api/orders/ORD-001, 得到 %s", r.URL.Path)
 		}
-		// 验证 status 作为 query 参数
 		if r.URL.Query().Get("status") != "paid" {
 			t.Errorf("status query 参数期望 paid, 得到 %s", r.URL.Query().Get("status"))
 		}
@@ -92,7 +89,7 @@ func TestForwardPathParamSubstitution(t *testing.T) {
 	defer backend.Close()
 
 	p := NewHttpProxy()
-	resp, err := p.Forward(&ProxyRequest{
+	resp, err := p.Forward(context.Background(), &ProxyRequest{
 		Method: "GET",
 		URL:    backend.URL + "/api/orders/{id}",
 		Args:   json.RawMessage(`{"id":"ORD-001","status":"paid"}`),
@@ -107,12 +104,32 @@ func TestForwardPathParamSubstitution(t *testing.T) {
 
 func TestForwardInvalidMethod(t *testing.T) {
 	p := NewHttpProxy()
-	_, err := p.Forward(&ProxyRequest{
+	_, err := p.Forward(context.Background(), &ProxyRequest{
 		Method: "DELETE",
 		URL:    "http://localhost",
 		Args:   nil,
 	})
 	if err == nil {
 		t.Errorf("不支持的方法应返回错误")
+	}
+}
+
+func TestForwardContextCancel(t *testing.T) {
+	// 验证：如果上游 context 被取消，代理请求应立即中断
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Second)
+	}))
+	defer backend.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 立即取消
+
+	p := NewHttpProxy()
+	_, err := p.Forward(ctx, &ProxyRequest{
+		Method: "GET",
+		URL:    backend.URL,
+	})
+	if err == nil {
+		t.Errorf("已取消的 context 应导致请求失败")
 	}
 }

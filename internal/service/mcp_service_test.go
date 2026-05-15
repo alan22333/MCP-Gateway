@@ -1,11 +1,14 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"mcp-gateway-go-demo/internal/cache"
 	"mcp-gateway-go-demo/internal/model"
 	"mcp-gateway-go-demo/internal/proxy"
 	"mcp-gateway-go-demo/internal/repository"
@@ -24,25 +27,23 @@ func setupService(t *testing.T) *McpService {
 	repo := repository.NewApiToolRepo(db)
 	repo.AutoMigrate()
 
-	// 预置一个测试工具
 	repo.Create(&model.ApiTool{
 		ToolName:    "echo",
 		Description: "回显测试工具",
 		InputSchema: map[string]interface{}{
 			"message": map[string]interface{}{"type": "string"},
 		},
-		BackendUrl: "",  // 由测试服务器提供
+		BackendUrl: "",
 		HttpMethod: "POST",
 	})
 
-	logger := zap.NewNop()
-	return NewMcpService(repo, proxy.NewHttpProxy(), logger)
+	return NewMcpService(repo, proxy.NewHttpProxy(), cache.NewMemCache(), 60*time.Second, zap.NewNop())
 }
 
 func TestHandleInitialize(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "1", Method: "initialize"}
-	resp := svc.Process(req)
+	resp := svc.Process(context.Background(), req)
 	if resp.Error != nil {
 		t.Fatalf("initialize 不应返回错误: %+v", resp.Error)
 	}
@@ -51,7 +52,7 @@ func TestHandleInitialize(t *testing.T) {
 func TestHandleToolsList(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "2", Method: "tools/list"}
-	resp := svc.Process(req)
+	resp := svc.Process(context.Background(), req)
 	if resp.Error != nil {
 		t.Fatalf("tools/list 不应返回错误: %+v", resp.Error)
 	}
@@ -71,7 +72,7 @@ func TestHandleToolsCallNotFound(t *testing.T) {
 	svc := setupService(t)
 	params, _ := json.Marshal(mcp.CallToolParams{Name: "nonexistent", Arguments: nil})
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "3", Method: "tools/call", Params: params}
-	resp := svc.Process(req)
+	resp := svc.Process(context.Background(), req)
 	if resp.Error == nil {
 		t.Fatalf("调用不存在的工具应返回错误")
 	}
@@ -97,14 +98,14 @@ func TestHandleToolsCallSuccess(t *testing.T) {
 		HttpMethod:  "POST",
 	})
 
-	svc := NewMcpService(repo, proxy.NewHttpProxy(), zap.NewNop())
+	svc := NewMcpService(repo, proxy.NewHttpProxy(), cache.NewMemCache(), 60*time.Second, zap.NewNop())
 
 	params, _ := json.Marshal(mcp.CallToolParams{
 		Name:      "echo",
 		Arguments: json.RawMessage(`{"message":"hello"}`),
 	})
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "4", Method: "tools/call", Params: params}
-	resp := svc.Process(req)
+	resp := svc.Process(context.Background(), req)
 	if resp.Error != nil {
 		t.Fatalf("tools/call 不应返回错误: %+v", resp.Error)
 	}
@@ -120,7 +121,7 @@ func TestHandleToolsCallSuccess(t *testing.T) {
 func TestHandleUnknownMethod(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "5", Method: "unknown/thing"}
-	resp := svc.Process(req)
+	resp := svc.Process(context.Background(), req)
 	if resp.Error == nil {
 		t.Fatalf("未知方法应返回错误")
 	}

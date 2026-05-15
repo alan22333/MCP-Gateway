@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 
 	"mcp-gateway-go-demo/pkg/mcp"
@@ -18,8 +19,9 @@ type McpHandler struct {
 }
 
 // RequestProcessor 定义处理 JSON-RPC 请求的接口
+// ctx 来自 HTTP 请求，用于全链路超时控制
 type RequestProcessor interface {
-	Process(req *mcp.RPCRequest) *mcp.RPCResponse
+	Process(ctx context.Context, req *mcp.RPCRequest) *mcp.RPCResponse
 }
 
 // NewMcpHandler 创建 McpHandler 实例
@@ -98,8 +100,8 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 		zap.String("session_id", sessionID),
 	)
 
-	// 交给 processor（service 层）处理，生成响应
-	resp := h.processor.Process(&req)
+	// 交给 processor（service 层）处理，传入 ctx 实现全链路超时
+	resp := h.processor.Process(c.Request.Context(), &req)
 
 	// 将响应推入 SSE 通道
 	select {

@@ -1,0 +1,52 @@
+# ── 二进制 & 编译产物 ──
+*.exe
+*.test
+*.out
+/tmp/
+/mcp-gateway
+/mock-backend
+/mock-client
+/seed
+
+# ── 数据库文件 ──
+*.db
+*.sqlite
+*.sqlite3
+
+# ── 配置文件（含敏感信息的不提交）──
+# config.yaml 如果含密钥请取消下一行注释
+# config.yaml
+
+# ── 文档 & 学习笔记 ──
+docs/
+*.md
+# 保留项目入口说明
+!README.md
+
+# ── 系统文件 ──
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ── IDE & 编辑器 ──
+.idea/
+.vscode/
+*.iml
+.codebuddy/
+.cursor/
+.copilot/
+.claude/
+
+# ── Go ──
+vendor/
+
+# ── 临时文件 ──
+*.log
+*.tmp

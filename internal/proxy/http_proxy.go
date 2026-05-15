@@ -2,6 +2,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,11 +40,10 @@ type ProxyResponse struct {
 }
 
 // Forward 发起代理请求到后端业务系统
-// 1. 如果 URL 中包含 {param} 占位符，则从 arguments 中提取对应值替换
-// 2. 对于 GET 请求，剩余参数展开为 Query 参数
-// 3. 对于 POST 请求，剩余参数作为 JSON Body
-func (p *HttpProxy) Forward(req *ProxyRequest) (*ProxyResponse, error) {
-	// 先解析 arguments 为 map
+// ctx 来自上层 HTTP handler，当客户端断开连接时，后端的 resty 请求也会被取消
+// 1. URL 中包含 {param} 占位符 → 从 arguments 中提取替换
+// 2. GET → 剩余参数展开为 Query；POST → 剩余参数作为 JSON Body
+func (p *HttpProxy) Forward(ctx context.Context, req *ProxyRequest) (*ProxyResponse, error) {
 	var argsMap map[string]interface{}
 	if len(req.Args) > 0 {
 		if err := json.Unmarshal(req.Args, &argsMap); err != nil {
@@ -57,11 +57,12 @@ func (p *HttpProxy) Forward(req *ProxyRequest) (*ProxyResponse, error) {
 		placeholder := "{" + k + "}"
 		if strings.Contains(url, placeholder) {
 			url = strings.ReplaceAll(url, placeholder, fmt.Sprintf("%v", v))
-			delete(argsMap, k) // 已消费的参数不再用作 query/body
+			delete(argsMap, k)
 		}
 	}
 
-	r := p.client.R()
+	// SetContext 将上游 context 绑定到 resty 请求，实现全链路超时/取消
+	r := p.client.R().SetContext(ctx)
 
 	switch req.Method {
 	case "GET":

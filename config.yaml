@@ -5,3 +5,11 @@ server:
 database:
   driver: sqlite     # 数据库驱动，可选 sqlite / mysql
   dsn: gateway.db    # SQLite 文件路径 或 MySQL DSN
+
+# 缓存（可选，默认使用内存缓存）
+cache:
+  enabled: true           # 是否启用请求去重缓存
+  redis_addr: ""          # Redis 地址，如 "localhost:6379"。为空则使用内存缓存
+  redis_password: ""      # Redis 密码
+  redis_db: 0             # Redis DB 编号
+  ttl: 60                 # 缓存 TTL（秒），相同参数的请求在 TTL 内直接返回缓存
