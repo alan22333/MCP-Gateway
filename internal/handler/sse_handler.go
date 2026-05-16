@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
+	"mcp-gateway-go-demo/internal/metrics"
 	"mcp-gateway-go-demo/pkg/mcp"
 	"mcp-gateway-go-demo/pkg/sse"
 
@@ -45,6 +47,9 @@ func (h *McpHandler) HandleSSE(c *gin.Context) {
 	session := h.sessionMgr.Create()
 	defer h.sessionMgr.Remove(session.ID)
 
+	metrics.ActiveSSESessions.Inc()
+	defer metrics.ActiveSSESessions.Dec()
+
 	h.logger.Info("SSE 连接建立", zap.String("session_id", session.ID))
 
 	// 发送 session_id 作为第一个事件，让客户端知道用哪个 ID 来发消息
@@ -84,6 +89,22 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 	session, err := h.sessionMgr.Get(sessionID)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ── 令牌桶限流检查 ──
+	if session.LimitEnabled && !session.Limiter.Allow() {
+		h.logger.Warn("触发限流", zap.String("session_id", sessionID))
+		metrics.RecordToolCall("(rate_limited)", "rate_limited", 0)
+		// 返回 MCP 错误格式，走 SSE 推送而非 HTTP 429
+		resp := mcp.NewError("rate-limited", mcp.ErrCodeInternal,
+			"请求过于频繁，请稍后重试 (限流: "+fmt.Sprintf("%.0f req/s)", session.Limiter.Limit()))
+		select {
+		case session.Response <- resp:
+			c.JSON(200, gin.H{"status": "rate_limited"})
+		default:
+			c.JSON(503, gin.H{"error": "响应通道已满"})
+		}
 		return
 	}
 

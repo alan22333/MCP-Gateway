@@ -37,7 +37,8 @@ func setupService(t *testing.T) *McpService {
 		HttpMethod: "POST",
 	})
 
-	return NewMcpService(repo, proxy.NewHttpProxy(), cache.NewMemCache(), 60*time.Second, zap.NewNop())
+	cbMgr := proxy.NewCircuitBreakerManager(proxy.CBConfig{MaxFailures: 5, Timeout: 30 * time.Second, HalfOpenMaxRequests: 1})
+	return NewMcpService(repo, proxy.NewHttpProxy(), cbMgr, cache.NewMemCache(), 60*time.Second, zap.NewNop())
 }
 
 func TestHandleInitialize(t *testing.T) {
@@ -98,7 +99,8 @@ func TestHandleToolsCallSuccess(t *testing.T) {
 		HttpMethod:  "POST",
 	})
 
-	svc := NewMcpService(repo, proxy.NewHttpProxy(), cache.NewMemCache(), 60*time.Second, zap.NewNop())
+	cbMgr := proxy.NewCircuitBreakerManager(proxy.CBConfig{MaxFailures: 5, Timeout: 30 * time.Second, HalfOpenMaxRequests: 1})
+	svc := NewMcpService(repo, proxy.NewHttpProxy(), cbMgr, cache.NewMemCache(), 60*time.Second, zap.NewNop())
 
 	params, _ := json.Marshal(mcp.CallToolParams{
 		Name:      "echo",

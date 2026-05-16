@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"mcp-gateway-go-demo/pkg/mcp"
+	"golang.org/x/time/rate"
 )
 
 // Session SSE 会话，每个已连接的大模型客户端对应一个 Session
@@ -13,12 +14,18 @@ type Session struct {
 	ID       string
 	Response chan *mcp.RPCResponse // 待发送给客户端的响应队列
 	Done     chan struct{}         // 连接断开时关闭
+	Limiter  *rate.Limiter          // 令牌桶限流器（per-session）
+	LimitEnabled bool               // 是否启用限流
 }
 
 // SessionManager 管理所有活跃的 SSE 会话
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
+	// 限流配置（所有新 session 共享）
+	limiterRPS   float64
+	limiterBurst int
+	limitEnabled bool
 }
 
 // NewSessionManager 创建 SessionManager 实例
@@ -28,12 +35,24 @@ func NewSessionManager() *SessionManager {
 	}
 }
 
-// Create 创建一个新的会话，返回 session ID
+// SetRateLimit 配置限流参数，后续创建的 session 都会带 limiter
+// rps: 每秒允许的请求数，burst: 突发容量
+func (m *SessionManager) SetRateLimit(rps float64, burst int) {
+	m.limitEnabled = true
+	m.limiterRPS = rps
+	m.limiterBurst = burst
+}
+
+// Create 创建一个新的会话
 func (m *SessionManager) Create() *Session {
 	s := &Session{
 		ID:       generateSessionID(),
-		Response: make(chan *mcp.RPCResponse, 16), // 带缓冲，避免阻塞
+		Response: make(chan *mcp.RPCResponse, 16),
 		Done:     make(chan struct{}),
+	}
+	if m.limitEnabled {
+		s.Limiter = rate.NewLimiter(rate.Limit(m.limiterRPS), m.limiterBurst)
+		s.LimitEnabled = true
 	}
 	m.mu.Lock()
 	m.sessions[s.ID] = s

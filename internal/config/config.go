@@ -9,9 +9,12 @@ import (
 
 // Config 应用程序配置结构体
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Cache    CacheConfig    `mapstructure:"cache"`
+	Server         ServerConfig         `mapstructure:"server"`
+	Database       DatabaseConfig       `mapstructure:"database"`
+	Cache          CacheConfig          `mapstructure:"cache"`
+	RateLimit      RateLimitConfig      `mapstructure:"rate_limit"`
+	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
+	Auth           AuthConfig            `mapstructure:"auth"`
 }
 
 // ServerConfig 服务器相关配置
@@ -27,11 +30,32 @@ type DatabaseConfig struct {
 
 // CacheConfig 缓存相关配置
 type CacheConfig struct {
-	Enabled       bool   `mapstructure:"enabled"`        // 是否启用缓存
-	RedisAddr     string `mapstructure:"redis_addr"`     // Redis 地址，如 "localhost:6379"
-	RedisPassword string `mapstructure:"redis_password"` // Redis 密码
-	RedisDB       int    `mapstructure:"redis_db"`       // Redis DB 编号
-	TTL           int    `mapstructure:"ttl"`            // 缓存过期时间（秒）
+	Enabled       bool   `mapstructure:"enabled"`
+	RedisAddr     string `mapstructure:"redis_addr"`
+	RedisPassword string `mapstructure:"redis_password"`
+	RedisDB       int    `mapstructure:"redis_db"`
+	TTL           int    `mapstructure:"ttl"`
+}
+
+// RateLimitConfig 令牌桶限流配置
+type RateLimitConfig struct {
+	Enabled           bool    `mapstructure:"enabled"`
+	RequestsPerSecond float64 `mapstructure:"requests_per_second"` // 每秒允许的请求数
+	Burst             int     `mapstructure:"burst"`               // 突发令牌数
+}
+
+// CircuitBreakerConfig 熔断器配置
+type CircuitBreakerConfig struct {
+	Enabled              bool `mapstructure:"enabled"`
+	MaxFailures          int  `mapstructure:"max_failures"`
+	Timeout              int  `mapstructure:"timeout"`
+	HalfOpenMaxRequests  int  `mapstructure:"half_open_max_requests"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	Enabled     bool     `mapstructure:"enabled"`      // 是否启用 API Key 认证
+	ExemptPaths []string `mapstructure:"exempt_paths"` // 豁免路径前缀（如 /metrics, /）
 }
 
 // Load 从 config.yaml 加载配置

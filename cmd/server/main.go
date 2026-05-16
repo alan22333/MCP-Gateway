@@ -17,6 +17,7 @@ import (
 	"mcp-gateway-go-demo/internal/cache"
 	"mcp-gateway-go-demo/internal/config"
 	"mcp-gateway-go-demo/internal/handler"
+	"mcp-gateway-go-demo/internal/middleware"
 	"mcp-gateway-go-demo/internal/model"
 	"mcp-gateway-go-demo/internal/proxy"
 	"mcp-gateway-go-demo/internal/repository"
@@ -24,6 +25,7 @@ import (
 	"mcp-gateway-go-demo/pkg/openapi"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -55,6 +57,18 @@ func main() {
 
 	httpProxy := proxy.NewHttpProxy()
 
+	// 初始化熔断器
+	cbManager := proxy.NewCircuitBreakerManager(proxy.CBConfig{
+		MaxFailures:         cfg.CircuitBreaker.MaxFailures,
+		Timeout:             time.Duration(cfg.CircuitBreaker.Timeout) * time.Second,
+		HalfOpenMaxRequests: cfg.CircuitBreaker.HalfOpenMaxRequests,
+	})
+	if cfg.CircuitBreaker.Enabled {
+		logger.Info("熔断器已启用",
+			zap.Int("max_failures", cfg.CircuitBreaker.MaxFailures),
+			zap.Int("timeout_sec", cfg.CircuitBreaker.Timeout))
+	}
+
 	// 初始化缓存：优先 Redis，不可用时回退内存缓存
 	var toolCache cache.ToolCache
 	cacheTTL := time.Duration(cfg.Cache.TTL) * time.Second
@@ -76,12 +90,37 @@ func main() {
 		logger.Info("使用内存缓存（未配置 Redis）")
 	}
 
-	svc := service.NewMcpService(apiRepo, httpProxy, toolCache, cacheTTL, logger)
+	svc := service.NewMcpService(apiRepo, httpProxy, cbManager, toolCache, cacheTTL, logger)
+
+	// 配置限流（启用后每个 SSE 会话都带令牌桶）
 	sessionMgr := handler.NewSessionManager()
+	if cfg.RateLimit.Enabled {
+		sessionMgr.SetRateLimit(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst)
+		logger.Info("限流已启用",
+			zap.Float64("rps", cfg.RateLimit.RequestsPerSecond),
+			zap.Int("burst", cfg.RateLimit.Burst))
+	}
 	mcpHandler := handler.NewMcpHandler(sessionMgr, svc, logger)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
+
+	// TraceID 中间件 —— 所有请求都带上唯一追踪 ID
+	r.Use(middleware.TraceID())
+
+	// API Key 认证中间件（可插拔：enabled=false 时完全跳过）
+	r.Use(middleware.APIKeyAuth(middleware.AuthConfig{
+		Enabled:     cfg.Auth.Enabled,
+		ExemptPaths: cfg.Auth.ExemptPaths,
+	}, apiRepo))
+
+	// 种子默认 API Key（仅当 auth 启用且未存在时）
+	if cfg.Auth.Enabled {
+		seedDefaultAPIKey(apiRepo, logger)
+	}
+
+	// Prometheus /metrics 端点
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// MCP 协议端点
 	r.GET("/mcp/sse", mcpHandler.HandleSSE)
@@ -104,6 +143,12 @@ func main() {
 
 	// 同步工具测试（通过 service 走，带日志）
 	r.POST("/api/tools/test", handleTestTool(svc))
+
+	// API Key 管理
+	r.GET("/api/keys", handleListKeys(apiRepo))
+	r.POST("/api/keys", handleCreateKey(apiRepo))
+	r.DELETE("/api/keys/:id", handleDeleteKey(apiRepo))
+	r.PUT("/api/keys/:id/toggle", handleToggleKey(apiRepo))
 
 	// 后端健康检查
 	r.GET("/api/health", handleHealth(httpProxy))
@@ -347,6 +392,87 @@ func handleTestTool(svc *service.McpService) gin.HandlerFunc {
 			"result":       result,
 			"mcp_response": mcpResp.Result,
 		})
+	}
+}
+
+// ---------- API Key 管理 ----------
+
+func handleListKeys(repo *repository.ApiToolRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		keys, err := repo.ListApiKeys()
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, gin.H{"keys": keys, "total": len(keys)})
+	}
+}
+
+func handleCreateKey(repo *repository.ApiToolRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var input struct {
+			Key  string `json:"key" binding:"required"`
+			Name string `json:"name" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(400, gin.H{"error": "参数校验失败: " + err.Error()})
+			return
+		}
+		ak := &model.ApiKey{Key: input.Key, Name: input.Name}
+		if err := repo.CreateApiKey(ak); err != nil {
+			c.JSON(500, gin.H{"error": "创建 API Key 失败: " + err.Error()})
+			return
+		}
+		c.JSON(201, ak)
+	}
+}
+
+func handleDeleteKey(repo *repository.ApiToolRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := parseUint(c.Param("id"))
+		if id == 0 {
+			c.JSON(400, gin.H{"error": "无效的 ID"})
+			return
+		}
+		if err := repo.DeleteApiKey(id); err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, gin.H{"message": "删除成功"})
+	}
+}
+
+func handleToggleKey(repo *repository.ApiToolRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := parseUint(c.Param("id"))
+		if id == 0 {
+			c.JSON(400, gin.H{"error": "无效的 ID"})
+			return
+		}
+		key, err := repo.ToggleApiKey(id)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(200, gin.H{"id": key.ID, "enabled": key.Enabled})
+	}
+}
+
+// ---------- 种子默认 API Key ----------
+
+func seedDefaultAPIKey(repo *repository.ApiToolRepo, logger *zap.Logger) {
+	defaultKey := "mcp-gw-sk-demo-key-2026"
+	_, err := repo.GetApiKeyByValue(defaultKey)
+	if err == nil {
+		return // 已存在
+	}
+	if err := repo.CreateApiKey(&model.ApiKey{
+		Key:  defaultKey,
+		Name: "默认演示密钥",
+	}); err != nil {
+		logger.Warn("创建默认 API Key 失败", zap.Error(err))
+	} else {
+		logger.Info("已创建默认 API Key", zap.String("key", defaultKey))
 	}
 }
 

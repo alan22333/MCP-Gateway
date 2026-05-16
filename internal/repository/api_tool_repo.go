@@ -16,7 +16,7 @@ func NewApiToolRepo(db *gorm.DB) *ApiToolRepo {
 }
 
 func (r *ApiToolRepo) AutoMigrate() error {
-	return r.db.AutoMigrate(&model.ApiTool{}, &model.CallLog{})
+	return r.db.AutoMigrate(&model.ApiTool{}, &model.CallLog{}, &model.ApiKey{})
 }
 
 func (r *ApiToolRepo) Create(tool *model.ApiTool) error {
@@ -87,6 +87,48 @@ func (r *ApiToolRepo) GetCallLogs(limit int) ([]model.CallLog, error) {
 	var logs []model.CallLog
 	err := r.db.Order("created_at DESC").Limit(limit).Find(&logs).Error
 	return logs, err
+}
+
+// ====== ApiKey ======
+
+// CreateApiKey 创建 API 密钥
+func (r *ApiToolRepo) CreateApiKey(key *model.ApiKey) error {
+	return r.db.Create(key).Error
+}
+
+// GetApiKeyByValue 根据密钥值查找（认证中间件用）
+func (r *ApiToolRepo) GetApiKeyByValue(key string) (*model.ApiKey, error) {
+	var ak model.ApiKey
+	err := r.db.Where("`key` = ? AND enabled = ?", key, true).First(&ak).Error
+	if err != nil {
+		return nil, err
+	}
+	return &ak, nil
+}
+
+// ListApiKeys 返回所有 API 密钥
+func (r *ApiToolRepo) ListApiKeys() ([]model.ApiKey, error) {
+	var keys []model.ApiKey
+	err := r.db.Find(&keys).Error
+	return keys, err
+}
+
+// DeleteApiKey 删除 API 密钥
+func (r *ApiToolRepo) DeleteApiKey(id uint) error {
+	return r.db.Delete(&model.ApiKey{}, id).Error
+}
+
+// ToggleApiKey 切换密钥启用/禁用
+func (r *ApiToolRepo) ToggleApiKey(id uint) (*model.ApiKey, error) {
+	var ak model.ApiKey
+	if err := r.db.First(&ak, id).Error; err != nil {
+		return nil, err
+	}
+	ak.Enabled = !ak.Enabled
+	if err := r.db.Model(&ak).Update("enabled", ak.Enabled).Error; err != nil {
+		return nil, err
+	}
+	return &ak, nil
 }
 
 // BatchCreate 批量创建工具（OpenAPI 导入使用）

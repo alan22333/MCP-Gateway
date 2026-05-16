@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"mcp-gateway-go-demo/internal/middleware"
+
 	"github.com/go-resty/resty/v2"
 )
 
@@ -63,6 +65,11 @@ func (p *HttpProxy) Forward(ctx context.Context, req *ProxyRequest) (*ProxyRespo
 
 	// SetContext 将上游 context 绑定到 resty 请求，实现全链路超时/取消
 	r := p.client.R().SetContext(ctx)
+
+	// 透传 TraceID 到后端，后端日志可以关联到网关的请求
+	if traceID := middleware.GetTraceID(ctx); traceID != "" {
+		r.SetHeader("X-Request-Id", traceID)
+	}
 
 	switch req.Method {
 	case "GET":

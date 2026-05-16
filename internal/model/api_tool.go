@@ -51,6 +51,20 @@ func (a *ApiTool) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+// ApiKey API 密钥表，用于网关接入认证
+type ApiKey struct {
+	gorm.Model
+	Key     string `gorm:"uniqueIndex;not null;size:64" json:"key"`  // 密钥值，如 "mcp-gw-sk-xxx"
+	Name    string `gorm:"not null;size:128" json:"name"`             // 密钥持有者/用途
+	Enabled bool   `gorm:"not null;default:true" json:"enabled"`      // 是否启用
+}
+
+// BeforeCreate GORM 钩子：新建时默认启用
+func (a *ApiKey) BeforeCreate(tx *gorm.DB) error {
+	a.Enabled = true
+	return nil
+}
+
 // CallLog 调用日志表，记录每次 tools/call 的请求与响应
 type CallLog struct {
 	gorm.Model

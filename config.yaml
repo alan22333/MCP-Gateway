@@ -13,3 +13,26 @@ cache:
   redis_password: ""      # Redis 密码
   redis_db: 0             # Redis DB 编号
   ttl: 60                 # 缓存 TTL（秒），相同参数的请求在 TTL 内直接返回缓存
+
+# 限流（防止 AI 客户端失控循环调用打垮后端）
+rate_limit:
+  enabled: true               # 是否启用限流
+  requests_per_second: 5      # 每 session 每秒允许的请求数
+  burst: 10                   # 突发允许的额外令牌数
+
+# 熔断（后端持续出错时快速失败，避免雪崩）
+circuit_breaker:
+  enabled: true               # 是否启用熔断
+  max_failures: 5             # 连续失败 N 次后熔断
+  timeout: 30                 # 熔断后多少秒进入半开探测
+  half_open_max_requests: 1   # 半开状态允许多少个探测请求
+
+# API Key 认证（可插拔：enabled=false 时完全跳过）
+auth:
+  enabled: false              # 是否启用认证（demo 阶段默认关闭）
+  exempt_paths:               # 豁免路径（不需要 API Key）
+    - /
+    - /index.html
+    - /static/
+    - /metrics
+    - /api/health
