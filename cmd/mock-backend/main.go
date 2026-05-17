@@ -11,6 +11,83 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// openapiSpec 返回此 mock 后端的 OpenAPI 3.0 文档（用于测试导入功能）
+func openapiSpec() gin.H {
+	return gin.H{
+		"openapi": "3.0.0",
+		"info":   gin.H{"title": "企业业务系统 API", "version": "1.0.0", "description": "模拟后端——订单、客户、库存管理"},
+		"servers": []gin.H{{"url": "http://localhost:9090", "description": "本地开发服务器"}},
+		"paths": gin.H{
+			"/api/orders": gin.H{
+				"get": gin.H{
+					"operationId": "query_orders",
+					"summary":     "查询订单列表",
+					"description": "按客户ID和订单状态筛选订单。状态: 待支付、已发货、已完成、退款中",
+					"parameters": []gin.H{
+						{"name": "customer", "in": "query", "schema": gin.H{"type": "string"}, "description": "客户ID，如 CUST-101"},
+						{"name": "status", "in": "query", "schema": gin.H{"type": "string"}, "description": "订单状态"},
+					},
+				},
+				"post": gin.H{
+					"operationId": "create_order",
+					"summary":     "创建新订单",
+					"description": "创建订单，需提供客户ID和金额",
+					"requestBody": gin.H{
+						"content": gin.H{"application/json": gin.H{"schema": gin.H{
+							"type": "object",
+							"properties": gin.H{
+								"customer": gin.H{"type": "string", "description": "客户ID"},
+								"amount":   gin.H{"type": "number", "description": "订单金额"},
+							},
+							"required": []string{"customer", "amount"},
+						}}},
+					},
+				},
+			},
+			"/api/orders/{id}": gin.H{
+				"get": gin.H{
+					"operationId": "get_order_detail",
+					"summary":     "查询订单详情",
+					"description": "根据订单ID查询单个订单",
+					"parameters":  []gin.H{{"name": "id", "in": "path", "required": true, "schema": gin.H{"type": "string"}, "description": "订单ID，如 ORD-001"}},
+				},
+			},
+			"/api/customers": gin.H{
+				"get": gin.H{
+					"operationId": "query_customers",
+					"summary":     "查询客户列表",
+					"description": "按客户等级筛选。等级: vip, normal",
+					"parameters":  []gin.H{{"name": "level", "in": "query", "schema": gin.H{"type": "string"}, "description": "客户等级: vip 或 normal"}},
+				},
+			},
+			"/api/customers/{id}": gin.H{
+				"get": gin.H{
+					"operationId": "get_customer_detail",
+					"summary":     "查询客户详情",
+					"description": "根据客户ID查询单个客户信息",
+					"parameters":  []gin.H{{"name": "id", "in": "path", "required": true, "schema": gin.H{"type": "string"}, "description": "客户ID，如 CUST-101"}},
+				},
+			},
+			"/api/inventory": gin.H{
+				"get": gin.H{
+					"operationId": "query_inventory",
+					"summary":     "查询库存列表",
+					"description": "按仓库名称筛选库存。仓库: 北京仓、上海仓、深圳仓",
+					"parameters":  []gin.H{{"name": "warehouse", "in": "query", "schema": gin.H{"type": "string"}, "description": "仓库名称"}},
+				},
+			},
+			"/api/inventory/{sku}": gin.H{
+				"get": gin.H{
+					"operationId": "get_inventory_item",
+					"summary":     "查询库存详情",
+					"description": "根据SKU查询单个商品库存",
+					"parameters":  []gin.H{{"name": "sku", "in": "path", "required": true, "schema": gin.H{"type": "string"}, "description": "商品SKU，如 SKU-1001"}},
+				},
+			},
+		},
+	}
+}
+
 // ---------- 模拟数据 ----------
 
 type Order struct {
@@ -78,10 +155,37 @@ func main() {
 		c.Next()
 	})
 
+	// ---- OpenAPI 文档端点（供网关导入功能测试）----
+	r.GET("/openapi.json", func(c *gin.Context) {
+		c.JSON(200, openapiSpec())
+	})
+	r.GET("/swagger.json", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"swagger":  "2.0",
+			"info":     gin.H{"title": "企业业务系统 API (Swagger 2.0)", "version": "1.0.0"},
+			"host":     "localhost:9090",
+			"basePath": "/",
+			"schemes":  []string{"http"},
+			"paths": gin.H{
+				"/api/customers": gin.H{
+					"get": gin.H{
+						"operationId": "query_customers",
+						"summary":     "查询客户列表",
+						"parameters":  []gin.H{{"name": "level", "in": "query", "type": "string", "description": "客户等级"}},
+					},
+				},
+			},
+		})
+	})
+
 	// ---- 首页 ----
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"service": "模拟企业后端服务 (Mock Backend)",
+			"openapi_specs": []string{
+				"GET /openapi.json    ← OpenAPI 3.0 文档（可用于网关导入测试）",
+				"GET /swagger.json    ← Swagger 2.0 文档（可用于网关导入测试）",
+			},
 			"endpoints": []string{
 				"GET  /api/orders?customer=&status=",
 				"GET  /api/orders/:id",

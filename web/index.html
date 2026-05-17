@@ -156,7 +156,36 @@
   <div id="panel-tools" class="panel active">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <h2 style="font-size:1.1rem;">已注册工具</h2>
-      <button class="btn btn-primary" onclick="showCreateForm()">+ 新建工具</button>
+      <div>
+        <button class="btn btn-primary" onclick="showCreateForm()">+ 新建工具</button>
+        <button class="btn btn-primary" style="background:#00b894;margin-left:8px;" onclick="showImportForm()">📥 从 OpenAPI 导入</button>
+      </div>
+    </div>
+
+    <!-- 导入表单 -->
+    <div id="import-form" style="display:none;background:#f0faf6;padding:20px;border-radius:8px;margin-bottom:20px;border:1px solid #c8f0e0;">
+      <h3 style="margin-bottom:12px;font-size:1rem;">从 OpenAPI / Swagger 文档导入工具</h3>
+      <div class="form-group">
+        <label>文档 URL（远程抓取）</label>
+        <input id="import-url" placeholder="如: https://petstore.swagger.io/v2/swagger.json" />
+        <div class="hint">填写 URL 后自动抓取。可测试: http://localhost:9090/openapi.json (OpenAPI 3.0) 或 /swagger.json (Swagger 2.0)</div>
+      </div>
+      <div class="form-group">
+        <label>或直接粘贴文档内容（YAML / JSON）</label>
+        <textarea id="import-spec" rows="5" placeholder='openapi: "3.0.0"&#10;info:&#10;  title: My API&#10;paths: ...'></textarea>
+      </div>
+      <div class="form-group">
+        <label>Base URL（可选，留空自动检测）</label>
+        <input id="import-baseurl" placeholder="如: http://localhost:9090" />
+        <div class="hint">留空时自动从文档 servers/host 字段检测</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="previewImport()" id="btn-preview">🔍 预览工具列表</button>
+        <button class="btn" style="background:#eee;" onclick="hideImportForm()">取消</button>
+      </div>
+
+      <!-- 预览结果：带复选框的工具列表 -->
+      <div id="import-preview" style="display:none;margin-top:16px;"></div>
     </div>
 
     <!-- 新建表单 -->
@@ -478,40 +507,107 @@ async function deleteTool(id) {
 }
 
 // ====== OpenAPI 导入 ======
-async function importOpenAPI() {
-  const fileInput = document.getElementById('import-file');
-  const baseURL = document.getElementById('import-base-url').value.trim() || 'http://localhost:9090';
-  const resultBox = document.getElementById('import-result');
+let importPreviewData = null; // 缓存预览结果
 
-  if (!fileInput.files.length) { toast('请先选择一个 OpenAPI 文件', 'warn'); return; }
+function showImportForm() { document.getElementById('import-form').style.display = 'block'; }
+function hideImportForm() {
+  document.getElementById('import-form').style.display = 'none';
+  document.getElementById('import-preview').style.display = 'none';
+  importPreviewData = null;
+}
 
-  const file = fileInput.files[0];
-  const text = await file.text();
+async function previewImport() {
+  const url = document.getElementById('import-url').value.trim();
+  const spec = document.getElementById('import-spec').value.trim();
+  const baseURL = document.getElementById('import-baseurl').value.trim();
 
-  resultBox.style.display = 'block';
-  resultBox.className = 'result-box';
-  resultBox.textContent = '导入中...';
+  if (!url && !spec) { toast('请填写文档 URL 或粘贴文档内容', 'warn'); return; }
+
+  const btn = document.getElementById('btn-preview');
+  btn.disabled = true; btn.textContent = '解析中...';
+
+  const previewDiv = document.getElementById('import-preview');
+  previewDiv.style.display = 'block';
+  previewDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">正在解析 API 文档...</div>';
 
   try {
-    const res = await fetch('/api/tools/import?base_url=' + encodeURIComponent(baseURL), {
+    const body = { base_url: baseURL || '' };
+    if (url) body.url = url; else body.spec = spec;
+
+    const res = await fetch('/api/tools/import?preview=true', {
       method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/json' },
-      body: text
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (res.ok) {
-      resultBox.textContent = '✓ ' + data.message;
-      resultBox.className = 'result-box';
-      toast(data.message, 'success');
-      await refreshTools();
-    } else {
-      resultBox.textContent = '✗ ' + (data.error || '导入失败');
-      resultBox.className = 'result-box error';
-      toast('导入失败: ' + (data.error || ''), 'error');
-    }
+    if (!res.ok) throw new Error(data.error || '解析失败');
+
+    importPreviewData = data;
+
+    previewDiv.innerHTML = `
+      <div style="background:#e7f7ef;padding:12px;border-radius:8px;margin-bottom:12px;">
+        <strong>${esc(data.title || '未命名 API')}</strong> &nbsp;
+        <span style="color:var(--muted);">${data.spec_version} · ${data.base_url} · ${data.total} 个端点</span>
+      </div>
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        ${data.tools.map((t, i) => `
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${i%2===0?'background:#fafbfc':''}">
+            <input type="checkbox" class="import-check" value="${esc(t.tool_name)}" checked style="margin-top:3px;width:auto;">
+            <div>
+              <strong>${esc(t.tool_name)}</strong>
+              <span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span>
+              <div style="font-size:0.8rem;color:var(--muted);margin-top:2px;">${esc(t.description)}</div>
+              <div style="font-size:0.75rem;font-family:monospace;color:var(--muted);">${esc(t.backend_url)}</div>
+            </div>
+          </label>
+        `).join('')}
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" onclick="confirmImport()">确认导入选中工具</button>
+        <button class="btn" style="background:#eee;" onclick="document.querySelectorAll('.import-check').forEach(c=>c.checked=!c.checked)">全选/反选</button>
+        <span style="font-size:0.85rem;color:var(--muted);" id="import-count">已选 ${data.total} 个</span>
+      </div>
+    `;
+
+    // 绑定 checkbox 变化事件更新计数
+    document.querySelectorAll('.import-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const n = document.querySelectorAll('.import-check:checked').length;
+        document.getElementById('import-count').textContent = '已选 ' + n + ' 个';
+      });
+    });
   } catch (e) {
-    resultBox.textContent = '✗ ' + e.message;
-    resultBox.className = 'result-box error';
+    previewDiv.innerHTML = '<div style="color:var(--danger);padding:12px;">❌ ' + esc(e.message) + '</div>';
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 预览工具列表';
+  }
+}
+
+async function confirmImport() {
+  if (!importPreviewData) return;
+  const checked = [...document.querySelectorAll('.import-check:checked')].map(c => c.value);
+
+  const body = {
+    tool_names: checked,
+    base_url: importPreviewData.base_url
+  };
+  // 重新发一次 spec/url 给导入接口
+  const url = document.getElementById('import-url').value.trim();
+  const spec = document.getElementById('import-spec').value.trim();
+  if (url) body.url = url; else body.spec = spec;
+
+  try {
+    const res = await fetch('/api/tools/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '导入失败');
+    toast(data.message, 'success');
+    hideImportForm();
+    await refreshTools();
+  } catch (e) {
     toast('导入失败: ' + e.message, 'error');
   }
 }

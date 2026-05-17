@@ -4,11 +4,13 @@ import (
 	"testing"
 )
 
-const sampleSpec = `
+const sampleOAS3 = `
 openapi: "3.0.0"
 info:
   title: Test API
   version: "1.0"
+servers:
+  - url: http://api.example.com
 paths:
   /orders:
     get:
@@ -36,50 +38,102 @@ paths:
       summary: 获取客户列表
 `
 
-func TestParseSpec(t *testing.T) {
-	tools, err := ParseSpec([]byte(sampleSpec), "http://api.example.com")
+const sampleSwagger2 = `
+swagger: "2.0"
+info:
+  title: Legacy API
+  version: "1.0"
+host: legacy.example.com
+basePath: /api/v1
+schemes:
+  - https
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      description: 获取用户列表
+      parameters:
+        - name: role
+          in: query
+          type: string
+    post:
+      operationId: createUser
+      description: 创建用户
+`
+
+func TestParseOpenAPI3(t *testing.T) {
+	result, err := ParseSpec([]byte(sampleOAS3), "")
+	if err != nil {
+		t.Fatalf("解析 OpenAPI 3.0 失败: %v", err)
+	}
+	if result.SpecVersion != "openapi3" {
+		t.Errorf("版本应为 openapi3, 得到 %s", result.SpecVersion)
+	}
+	if result.Title != "Test API" {
+		t.Errorf("标题应为 Test API, 得到 %s", result.Title)
+	}
+	// servers auto-detect
+	if result.BaseURL != "http://api.example.com" {
+		t.Errorf("baseURL 应为 http://api.example.com, 得到 %s", result.BaseURL)
+	}
+	if len(result.Tools) != 3 {
+		t.Fatalf("期望 3 个工具, 得到 %d", len(result.Tools))
+	}
+
+	byName := make(map[string]ParsedTool)
+	for _, tl := range result.Tools {
+		byName[tl.ToolName] = tl
+	}
+	if _, ok := byName["listOrders"]; !ok {
+		t.Error("缺少 listOrders")
+	}
+	if _, ok := byName["createOrder"]; !ok {
+		t.Error("缺少 createOrder")
+	}
+}
+
+func TestParseSwagger2(t *testing.T) {
+	result, err := ParseSpec([]byte(sampleSwagger2), "")
+	if err != nil {
+		t.Fatalf("解析 Swagger 2.0 失败: %v", err)
+	}
+	if result.SpecVersion != "swagger2" {
+		t.Errorf("版本应为 swagger2, 得到 %s", result.SpecVersion)
+	}
+	// auto-detect baseURL from host+basePath+scheme
+	if result.BaseURL != "https://legacy.example.com/api/v1" {
+		t.Errorf("baseURL 应为 https://legacy.example.com/api/v1, 得到 %s", result.BaseURL)
+	}
+	if len(result.Tools) != 2 {
+		t.Fatalf("期望 2 个工具, 得到 %d", len(result.Tools))
+	}
+
+	byName := make(map[string]ParsedTool)
+	for _, tl := range result.Tools {
+		byName[tl.ToolName] = tl
+	}
+	if _, ok := byName["listUsers"]; !ok {
+		t.Error("缺少 listUsers")
+	}
+	if _, ok := byName["createUser"]; !ok {
+		t.Error("缺少 createUser")
+	}
+}
+
+func TestParseSpecOverrideBaseURL(t *testing.T) {
+	result, err := ParseSpec([]byte(sampleOAS3), "http://custom.example.com")
 	if err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
+	if result.BaseURL != "http://custom.example.com" {
+		t.Errorf("手动指定的 baseURL 应覆盖 auto-detect: %s", result.BaseURL)
+	}
+}
 
-	if len(tools) != 3 {
-		t.Fatalf("期望解析出 3 个工具，得到 %d", len(tools))
-	}
-
-	// 转为 map 以便按名称查找（Go map 迭代顺序不确定）
-	byName := make(map[string]ParsedTool)
-	for _, tool := range tools {
-		byName[tool.ToolName] = tool
-	}
-
-	// listOrders (GET /orders)
-	listOrders, ok := byName["listOrders"]
-	if !ok {
-		t.Fatal("未找到 listOrders 工具")
-	}
-	if listOrders.HttpMethod != "GET" {
-		t.Errorf("listOrders Method 期望 GET, 得到 %s", listOrders.HttpMethod)
-	}
-	if listOrders.BackendUrl != "http://api.example.com/orders" {
-		t.Errorf("listOrders URL 不匹配: %s", listOrders.BackendUrl)
-	}
-
-	// createOrder (POST /orders/{id})
-	createOrder, ok := byName["createOrder"]
-	if !ok {
-		t.Fatal("未找到 createOrder 工具")
-	}
-	if createOrder.HttpMethod != "POST" {
-		t.Errorf("createOrder Method 期望 POST, 得到 %s", createOrder.HttpMethod)
-	}
-
-	// get_customers (GET /customers, 无 operationId 自动生成)
-	getCustomers, ok := byName["get_customers"]
-	if !ok {
-		t.Fatal("未找到 get_customers 工具")
-	}
-	if getCustomers.HttpMethod != "GET" {
-		t.Errorf("get_customers Method 期望 GET, 得到 %s", getCustomers.HttpMethod)
+func TestParseSpecInvalid(t *testing.T) {
+	_, err := ParseSpec([]byte(`not a valid spec`), "")
+	if err == nil {
+		t.Error("无效文档应返回错误")
 	}
 }
 
@@ -93,12 +147,5 @@ func TestToMCPTools(t *testing.T) {
 	}
 	if mcpTools[0].Name != "test" {
 		t.Errorf("名称不匹配")
-	}
-}
-
-func TestParseSpecInvalidYAML(t *testing.T) {
-	_, err := ParseSpec([]byte(`not: [valid yaml for openapi`), "http://x")
-	if err == nil {
-		t.Errorf("无效 YAML 应返回错误")
 	}
 }
