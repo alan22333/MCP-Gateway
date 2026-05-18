@@ -3,15 +3,22 @@ package middleware
 import (
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"mcp-gateway-go-demo/internal/repository"
 
 	"github.com/gin-gonic/gin"
 )
 
+// AuthConfig 认证中间件启动配置（部分字段可通过 runtimeCfg 热更新）
 type AuthConfig struct {
 	Enabled     bool
 	ExemptPaths []string
+}
+
+// RuntimeConfig 运行时可热更新的配置（通过 atomic.Value 在 main 和 middleware 间共享）
+type RuntimeConfig struct {
+	AuthEnabled bool
 }
 
 // APIKeyAuth 返回 API Key 认证中间件（per-gateway 判断）
@@ -19,9 +26,18 @@ type AuthConfig struct {
 // 2. 查 ApiKey → 获取 GatewayID → 查 Gateway → 检查 APIKeyRequired
 // 3. 无 key 时读 gateway query param → 查 Gateway → 检查 APIKeyRequired
 // 4. 存储 gateway_id 到 gin context 供下游使用
-func APIKeyAuth(cfg AuthConfig, repo *repository.ApiToolRepo) gin.HandlerFunc {
+// rtCfgPtr: 指向运行时配置的 atomic.Value，支持热更新 auth.enabled
+func APIKeyAuth(cfg AuthConfig, repo *repository.ApiToolRepo, rtCfgPtr *atomic.Value) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !cfg.Enabled {
+		// 检查热更新后的 enabled 状态
+		enabled := cfg.Enabled
+		if rtCfgPtr != nil {
+			if rt, ok := rtCfgPtr.Load().(*RuntimeConfig); ok {
+				enabled = rt.AuthEnabled
+			}
+		}
+
+		if !enabled {
 			c.Next()
 			return
 		}

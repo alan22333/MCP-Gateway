@@ -17,7 +17,7 @@ func NewLogHandler(repo *repository.ApiToolRepo) *LogHandler {
 	return &LogHandler{repo: repo}
 }
 
-func (h *LogHandler) RegisterRoutes(r *gin.Engine) {
+func (h *LogHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/logs", h.List)
 }
 

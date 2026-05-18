@@ -23,7 +23,7 @@ func NewImportHandler(repo *repository.ApiToolRepo) *ImportHandler {
 	return &ImportHandler{repo: repo}
 }
 
-func (h *ImportHandler) RegisterRoutes(r *gin.Engine) {
+func (h *ImportHandler) RegisterRoutes(r gin.IRouter) {
 	r.POST("/api/tools/import", h.Import)
 }
 

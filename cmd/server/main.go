@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,7 +31,7 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	// 1. 配置 & 数据库
+	// ── 1. 配置 & 数据库 ──
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Fatal("加载配置失败", zap.Error(err))
@@ -50,7 +51,7 @@ func main() {
 	}
 	logger.Info("数据库表结构就绪")
 
-	// 2. 核心依赖
+	// ── 2. 核心依赖 ──
 	httpProxy := proxy.NewHttpProxy()
 
 	cbManager := proxy.NewCircuitBreakerManager(proxy.CBConfig{
@@ -91,49 +92,85 @@ func main() {
 			zap.Float64("rps", cfg.RateLimit.RequestsPerSecond),
 			zap.Int("burst", cfg.RateLimit.Burst))
 	}
+	// 每 session 并发控制（默认 5 个并发槽位）
+	sessionMgr.SetConcurrencyLimit(5)
+	logger.Info("并发控制已启用", zap.Int("max_concurrent_per_session", 5))
 
-	// 3. 路由
+	// 运行时可热更新的配置
+	rtCfg := &middleware.RuntimeConfig{AuthEnabled: cfg.Auth.Enabled}
+	var rtCfgPtr atomic.Value
+	rtCfgPtr.Store(rtCfg)
+
+	// ── 3. 配置热更新 ──
+	done := make(chan struct{})
+	defer close(done)
+	config.WatchAndReload(func(newCfg *config.Config) {
+		// 更新 session 管理器限流参数
+		if newCfg.RateLimit.Enabled {
+			sessionMgr.SetRateLimit(newCfg.RateLimit.RequestsPerSecond, newCfg.RateLimit.Burst)
+		}
+		// 更新运行时配置（auth 开关）
+		rtCfg.AuthEnabled = newCfg.Auth.Enabled
+		rtCfgPtr.Store(rtCfg)
+		logger.Info("配置已热更新",
+			zap.Float64("rps", newCfg.RateLimit.RequestsPerSecond),
+			zap.Bool("auth_enabled", newCfg.Auth.Enabled))
+	}, done)
+	logger.Info("配置文件监控已启动（热更新就绪）")
+
+	// ── 4. 路由（分组中间件栈）──
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
+	// 全局中间件：TraceID 和请求体大小限制对所有路由生效
 	r.Use(middleware.TraceID())
-	r.Use(middleware.APIKeyAuth(middleware.AuthConfig{
+	r.Use(middleware.BodyLimit(int64(cfg.Server.MaxBodyBytes)))
+
+	// ── 分组 1：可观测 & 健康检查（无需认证）──
+	publicGroup := r.Group("")
+	{
+		publicGroup.GET("/metrics", gin.WrapH(promhttp.Handler()))
+		publicGroup.GET("/api/health", handler.NewHealthHandler(httpProxy).Check)
+	}
+
+	// ── 分组 2：MCP 协议端点（认证中间件）──
+	mcpGroup := r.Group("/mcp", middleware.APIKeyAuth(middleware.AuthConfig{
 		Enabled: cfg.Auth.Enabled, ExemptPaths: cfg.Auth.ExemptPaths,
-	}, apiRepo))
+	}, apiRepo, &rtCfgPtr))
+	{
+		if _, err = apiRepo.EnsureDefaultGateway(); err != nil {
+			logger.Warn("默认网关迁移失败", zap.Error(err))
+		}
 
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
-
-	// ── 启动时迁移：确保默认网关存在 ──
-	_, err = apiRepo.EnsureDefaultGateway()
-	if err != nil {
-		logger.Warn("默认网关迁移失败", zap.Error(err))
+		mcpHandler := handler.NewMcpHandler(sessionMgr, apiRepo, svc, logger)
+		mcpGroup.GET("/sse", mcpHandler.HandleSSE)
+		mcpGroup.POST("/message", mcpHandler.HandleMessage)
 	}
 
-	// MCP 协议端点
-	mcpHandler := handler.NewMcpHandler(sessionMgr, apiRepo, svc, logger)
-	r.GET("/mcp/sse", mcpHandler.HandleSSE)
-	r.POST("/mcp/message", mcpHandler.HandleMessage)
+	// ── 分组 3：管理 API（认证中间件）──
+	apiGroup := r.Group("/api", middleware.APIKeyAuth(middleware.AuthConfig{
+		Enabled: cfg.Auth.Enabled, ExemptPaths: cfg.Auth.ExemptPaths,
+	}, apiRepo, &rtCfgPtr))
+	{
+		handler.NewGatewayHandler(apiRepo).RegisterRoutes(apiGroup)
+		handler.NewToolHandler(apiRepo, svc).RegisterRoutes(apiGroup)
+		handler.NewImportHandler(apiRepo).RegisterRoutes(apiGroup)
+		handler.NewLogHandler(apiRepo).RegisterRoutes(apiGroup)
+		handler.NewSessionHandler(sessionMgr).RegisterRoutes(apiGroup)
 
-	// 业务 API handlers
-	handler.NewGatewayHandler(apiRepo).RegisterRoutes(r)
-	handler.NewToolHandler(apiRepo, svc).RegisterRoutes(r)
-	handler.NewImportHandler(apiRepo).RegisterRoutes(r)
-	handler.NewLogHandler(apiRepo).RegisterRoutes(r)
-	handler.NewSessionHandler(sessionMgr).RegisterRoutes(r)
-	handler.NewHealthHandler(httpProxy).RegisterRoutes(r)
-
-	keyHandler := handler.NewKeyHandler(apiRepo)
-	keyHandler.RegisterRoutes(r)
-	if cfg.Auth.Enabled {
-		keyHandler.SeedDefault(logger)
+		keyHandler := handler.NewKeyHandler(apiRepo)
+		keyHandler.RegisterRoutes(apiGroup)
+		if cfg.Auth.Enabled {
+			keyHandler.SeedDefault(logger)
+		}
 	}
 
-	// 管理后台前端
+	// ── 分组 4：管理后台前端（无需认证）──
 	r.StaticFile("/", "./web/index.html")
 	r.StaticFile("/index.html", "./web/index.html")
 	r.Static("/static", "./web/static")
 
-	// 4. 启动 & 优雅关闭
+	// ── 5. 启动 & 优雅关闭 ──
 	addr := ":" + strconv.Itoa(cfg.Server.Port)
 	srv := &http.Server{Addr: addr, Handler: r}
 

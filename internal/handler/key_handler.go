@@ -17,7 +17,7 @@ func NewKeyHandler(repo *repository.ApiToolRepo) *KeyHandler {
 	return &KeyHandler{repo: repo}
 }
 
-func (h *KeyHandler) RegisterRoutes(r *gin.Engine) {
+func (h *KeyHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/keys", h.List)
 	r.POST("/api/keys", h.Create)
 	r.DELETE("/api/keys/:id", h.Delete)

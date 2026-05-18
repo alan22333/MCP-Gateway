@@ -16,7 +16,7 @@ func NewGatewayHandler(repo *repository.ApiToolRepo) *GatewayHandler {
 	return &GatewayHandler{repo: repo}
 }
 
-func (h *GatewayHandler) RegisterRoutes(r *gin.Engine) {
+func (h *GatewayHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/gateways", h.List)
 	r.POST("/api/gateways", h.Create)
 	r.DELETE("/api/gateways/:id", h.Delete)

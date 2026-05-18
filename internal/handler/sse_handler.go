@@ -112,6 +112,7 @@ func (h *McpHandler) resolveGateway(c *gin.Context) (uint, string) {
 }
 
 // HandleMessage 处理 POST /mcp/message —— 接收 JSON-RPC 请求并异步返回结果
+// 流程：限流检查 → 并发控制（信号量）→ JSON 解析 → 业务处理 → SSE 响应
 func (h *McpHandler) HandleMessage(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	if sessionID == "" {
@@ -125,6 +126,7 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 		return
 	}
 
+	// ── 1. 令牌桶限流 ──
 	if session.LimitEnabled && !session.Limiter.Allow() {
 		h.logger.Warn("触发限流", zap.String("session_id", sessionID))
 		metrics.RecordToolCall("(rate_limited)", "rate_limited", 0)
@@ -138,6 +140,22 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 		}
 		return
 	}
+
+	// ── 2. 并发控制（信号量）──
+	// 每个 session 最多同时处理 maxConcurrent 个请求，超过则返回 429
+	if !session.TryAcquire() {
+		h.logger.Warn("并发限制", zap.String("session_id", sessionID))
+		resp := mcp.NewError("concurrency-limit", mcp.ErrCodeInternal,
+			fmt.Sprintf("并发请求过多，最多允许 %d 个同时进行的调用", session.maxConcurrent))
+		select {
+		case session.Response <- resp:
+			c.JSON(200, gin.H{"status": "concurrency_limited"})
+		default:
+			c.JSON(503, gin.H{"error": "响应通道已满"})
+		}
+		return
+	}
+	defer session.Release()
 
 	var req mcp.RPCRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

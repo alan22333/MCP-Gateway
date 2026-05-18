@@ -13,7 +13,7 @@ func NewSessionHandler(mgr *SessionManager) *SessionHandler {
 	return &SessionHandler{mgr: mgr}
 }
 
-func (h *SessionHandler) RegisterRoutes(r *gin.Engine) {
+func (h *SessionHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/sessions", h.List)
 }
 

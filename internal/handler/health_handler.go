@@ -15,7 +15,7 @@ func NewHealthHandler(p *proxy.HttpProxy) *HealthHandler {
 	return &HealthHandler{proxy: p}
 }
 
-func (h *HealthHandler) RegisterRoutes(r *gin.Engine) {
+func (h *HealthHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/health", h.Check)
 }
 

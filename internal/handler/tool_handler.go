@@ -20,7 +20,7 @@ func NewToolHandler(repo *repository.ApiToolRepo, svc *service.McpService) *Tool
 	return &ToolHandler{repo: repo, svc: svc}
 }
 
-func (h *ToolHandler) RegisterRoutes(r *gin.Engine) {
+func (h *ToolHandler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/api/tools", h.List)
 	r.POST("/api/tools", h.Create)
 	r.DELETE("/api/tools/:id", h.Delete)
