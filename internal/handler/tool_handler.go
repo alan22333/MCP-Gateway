@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ToolHandler 工具管理 API handler
 type ToolHandler struct {
 	repo *repository.ApiToolRepo
 	svc  *service.McpService
@@ -30,7 +29,14 @@ func (h *ToolHandler) RegisterRoutes(r *gin.Engine) {
 }
 
 func (h *ToolHandler) List(c *gin.Context) {
-	tools, err := h.repo.GetAll()
+	gatewayID := parseGatewayID(c)
+	var tools []model.ApiTool
+	var err error
+	if gatewayID > 0 {
+		tools, err = h.repo.GetToolsByGateway(gatewayID)
+	} else {
+		tools, err = h.repo.GetAllTools()
+	}
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -40,6 +46,7 @@ func (h *ToolHandler) List(c *gin.Context) {
 
 func (h *ToolHandler) Create(c *gin.Context) {
 	var input struct {
+		GatewayID   uint                   `json:"gateway_id"`
 		ToolName    string                 `json:"tool_name" binding:"required"`
 		Description string                 `json:"description" binding:"required"`
 		InputSchema map[string]interface{} `json:"input_schema"`
@@ -54,7 +61,11 @@ func (h *ToolHandler) Create(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "HttpMethod 只支持 GET 或 POST"})
 		return
 	}
+	if input.GatewayID == 0 {
+		input.GatewayID = parseGatewayID(c)
+	}
 	tool := &model.ApiTool{
+		GatewayID:   input.GatewayID,
 		ToolName:    input.ToolName,
 		Description: input.Description,
 		InputSchema: input.InputSchema,
@@ -104,7 +115,8 @@ func (h *ToolHandler) Test(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "参数校验失败: " + err.Error()})
 		return
 	}
-	proxyResp, mcpResp := h.svc.CallTool(c.Request.Context(), input.ToolName, input.Args, "WEB")
+	gatewayID := parseGatewayID(c)
+	proxyResp, mcpResp := h.svc.CallTool(c.Request.Context(), gatewayID, input.ToolName, input.Args, "WEB")
 	if mcpResp.Error != nil {
 		c.JSON(502, gin.H{"error": mcpResp.Error.Message})
 		return

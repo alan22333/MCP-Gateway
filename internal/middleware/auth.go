@@ -9,30 +9,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AuthConfig 认证中间件配置
 type AuthConfig struct {
-	Enabled     bool     // 是否启用认证（false 时直接放行）
-	ExemptPaths []string // 豁免路径前缀列表（如 /metrics, /, /static）
+	Enabled     bool
+	ExemptPaths []string
 }
 
-// AuthKeyChecker 查询密钥是否合法的接口（repo 实现）
-type AuthKeyChecker interface {
-	GetApiKeyByValue(key string) (*struct{ Name string }, error)
-}
-
-// APIKeyAuth 返回 API Key 认证中间件
-// 从 X-API-Key header 或 api_key query param 中读取密钥，查数据库验证
-// 位于 ExemptPaths 中的路径不检查
+// APIKeyAuth 返回 API Key 认证中间件（per-gateway 判断）
+// 1. 读 X-API-Key header 或 api_key query param
+// 2. 查 ApiKey → 获取 GatewayID → 查 Gateway → 检查 APIKeyRequired
+// 3. 无 key 时读 gateway query param → 查 Gateway → 检查 APIKeyRequired
+// 4. 存储 gateway_id 到 gin context 供下游使用
 func APIKeyAuth(cfg AuthConfig, repo *repository.ApiToolRepo) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 未启用 → 直接放行
 		if !cfg.Enabled {
 			c.Next()
 			return
 		}
 
-		// 豁免路径 → 直接放行
-		// "/" 和 "/index.html" 精确匹配；"/static/"、"/metrics" 等用前缀匹配
+		// 豁免路径
 		path := c.Request.URL.Path
 		for _, exempt := range cfg.ExemptPaths {
 			if exempt == "/" || exempt == "/index.html" {
@@ -48,29 +42,46 @@ func APIKeyAuth(cfg AuthConfig, repo *repository.ApiToolRepo) gin.HandlerFunc {
 			}
 		}
 
-		// 从 Header 或 Query 获取 API Key
 		apiKey := c.GetHeader("X-API-Key")
 		if apiKey == "" {
 			apiKey = c.Query("api_key")
 		}
-		if apiKey == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "缺少 API Key，请在 X-API-Key header 或 api_key query 参数中提供",
-			})
+
+		if apiKey != "" {
+			// 有 key → 查 key → 查 gateway → 按 gateway.APIKeyRequired 判断
+			key, err := repo.GetApiKeyByValue(apiKey)
+			if err != nil || key == nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API Key 无效或已被禁用"})
+				return
+			}
+			c.Set("api_key_name", key.Name)
+			c.Set("gateway_id", key.GatewayID)
+
+			// 即使 key 有效，如果 gateway 的 APIKeyRequired=false，也放行
+			if gw, err := repo.GetGatewayByID(key.GatewayID); err == nil && !gw.APIKeyRequired {
+				c.Next()
+				return
+			}
+			c.Next()
 			return
 		}
 
-		// 查数据库验证
-		key, err := repo.GetApiKeyByValue(apiKey)
-		if err != nil || key == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "API Key 无效或已被禁用",
-			})
+		// 无 key → 查 gateway 参数
+		gwName := c.Query("gateway")
+		if gwName == "" {
+			gwName = "Default Gateway"
+		}
+		gw, err := repo.GetGatewayByName(gwName)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "网关不存在: " + gwName})
 			return
 		}
 
-		// 存入 context，供下游 handler 获取调用者身份
-		c.Set("api_key_name", key.Name)
+		c.Set("gateway_id", gw.ID)
+		if gw.APIKeyRequired {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "此网关需要 API Key"})
+			return
+		}
 		c.Next()
 	}
 }

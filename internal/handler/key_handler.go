@@ -40,7 +40,14 @@ func (h *KeyHandler) SeedDefault(logger *zap.Logger) {
 }
 
 func (h *KeyHandler) List(c *gin.Context) {
-	keys, err := h.repo.ListApiKeys()
+	gatewayID := parseGatewayID(c)
+	var keys []model.ApiKey
+	var err error
+	if gatewayID > 0 {
+		keys, err = h.repo.GetApiKeysByGateway(gatewayID)
+	} else {
+		keys, err = h.repo.ListApiKeys()
+	}
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -50,14 +57,18 @@ func (h *KeyHandler) List(c *gin.Context) {
 
 func (h *KeyHandler) Create(c *gin.Context) {
 	var input struct {
-		Key  string `json:"key" binding:"required"`
-		Name string `json:"name" binding:"required"`
+		GatewayID uint   `json:"gateway_id"`
+		Key       string `json:"key" binding:"required"`
+		Name      string `json:"name" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(400, gin.H{"error": "参数校验失败: " + err.Error()})
 		return
 	}
-	ak := &model.ApiKey{Key: input.Key, Name: input.Name}
+	if input.GatewayID == 0 {
+		input.GatewayID = parseGatewayID(c)
+	}
+	ak := &model.ApiKey{GatewayID: input.GatewayID, Key: input.Key, Name: input.Name}
 	if err := h.repo.CreateApiKey(ak); err != nil {
 		c.JSON(500, gin.H{"error": "创建 API Key 失败: " + err.Error()})
 		return

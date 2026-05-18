@@ -103,12 +103,19 @@ func main() {
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
+	// ── 启动时迁移：确保默认网关存在 ──
+	_, err = apiRepo.EnsureDefaultGateway()
+	if err != nil {
+		logger.Warn("默认网关迁移失败", zap.Error(err))
+	}
+
 	// MCP 协议端点
-	mcpHandler := handler.NewMcpHandler(sessionMgr, svc, logger)
+	mcpHandler := handler.NewMcpHandler(sessionMgr, apiRepo, svc, logger)
 	r.GET("/mcp/sse", mcpHandler.HandleSSE)
 	r.POST("/mcp/message", mcpHandler.HandleMessage)
 
 	// 业务 API handlers
+	handler.NewGatewayHandler(apiRepo).RegisterRoutes(r)
 	handler.NewToolHandler(apiRepo, svc).RegisterRoutes(r)
 	handler.NewImportHandler(apiRepo).RegisterRoutes(r)
 	handler.NewLogHandler(apiRepo).RegisterRoutes(r)

@@ -116,11 +116,42 @@
       <h1>MCP Gateway 管理后台</h1>
       <span style="opacity:0.8;font-size:0.85rem;">AI Model Context Protocol 网关</span>
     </div>
-    <span class="badge">v1.1.0</span>
+    <span class="badge">v2.0.0</span>
   </div>
 </header>
 
 <div class="container">
+  <!-- 网关选择器 -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+    <span style="font-weight:600;color:var(--muted);font-size:0.85rem;">当前网关:</span>
+    <select id="gateway-select" onchange="onGatewayChange()" style="width:auto;min-width:200px;">
+      <option value="">加载中...</option>
+    </select>
+    <button class="btn btn-sm btn-primary" onclick="showGatewayForm()" style="font-size:0.78rem;">+ 新建网关</button>
+    <span id="gateway-auth-badge" style="font-size:0.78rem;"></span>
+  </div>
+
+  <!-- 新建网关表单 -->
+  <div id="gateway-form" style="display:none;background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:16px;border:1px solid #e8e8ff;">
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+        <label>网关名称 *</label>
+        <input id="gw-name" placeholder="如: 订单服务网关" />
+      </div>
+      <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
+        <label>描述</label>
+        <input id="gw-desc" placeholder="网关用途说明" />
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="gw-auth" style="width:auto;" /> 需要 API Key
+        </label>
+      </div>
+      <button class="btn btn-primary" onclick="createGateway()">确认创建</button>
+      <button class="btn" style="background:#eee;" onclick="document.getElementById('gateway-form').style.display='none'">取消</button>
+    </div>
+  </div>
+
   <!-- 统计卡片 -->
   <div class="stats">
     <div class="stat-card">
@@ -146,7 +177,6 @@
   <!-- 标签页 -->
   <div class="tabs">
     <button class="tab active" data-panel="panel-tools">工具管理</button>
-    <button class="tab" data-panel="panel-import">📥 导入</button>
     <button class="tab" data-panel="panel-tester">🧪 测试</button>
     <button class="tab" data-panel="panel-logs">📋 调用历史</button>
     <button class="tab" data-panel="panel-sessions">🔌 会话</button>
@@ -230,38 +260,7 @@
     </div>
   </div>
 
-  <!-- ====== 面板2: OpenAPI 导入 ====== -->
-  <div id="panel-import" class="panel">
-    <h2 style="font-size:1.1rem;margin-bottom:16px;">从 OpenAPI / Swagger 批量导入</h2>
-    <div class="two-col">
-      <div>
-        <div class="form-group">
-          <label>后端基础地址</label>
-          <input id="import-base-url" value="http://localhost:9090" placeholder="http://localhost:9090" />
-          <div class="hint">API 路径将拼接在此地址后，如 /api/orders → http://localhost:9090/api/orders</div>
-        </div>
-        <div class="drop-zone" id="drop-zone">
-          <p style="font-size:1.2rem;margin-bottom:4px;">📄</p>
-          <p>拖拽 OpenAPI JSON/YAML 文件到此处</p>
-          <p style="font-size:0.8rem;color:var(--muted);">或点击选择文件</p>
-          <input type="file" id="import-file" accept=".json,.yaml,.yml" style="display:none;" />
-        </div>
-        <button class="btn btn-primary" onclick="importOpenAPI()" style="margin-top:16px;width:100%;">开始导入</button>
-      </div>
-      <div>
-        <div class="alert alert-warn" style="font-size:0.82rem;">
-          <strong>提示</strong><br>
-          上传 OpenAPI 3.0 规范的 JSON 或 YAML 文件，系统将自动：<br>
-          • 提取每个接口路径和方法<br>
-          • 用 operationId 或 路径 生成工具名<br>
-          • 解析参数和请求体作为 Input Schema
-        </div>
-        <div id="import-result" class="result-box" style="display:none;"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ====== 面板3: 工具测试 ====== -->
+  <!-- ====== 面板2: 工具测试 ====== -->
   <div id="panel-tester" class="panel">
     <h2 style="font-size:1.1rem;margin-bottom:16px;">手动工具测试</h2>
     <div id="backend-warn" class="alert alert-warn" style="display:none;">
@@ -370,6 +369,7 @@ async function checkBackend() {
   const text = document.getElementById('stat-backend');
   const warn = document.getElementById('backend-warn');
   const btn = document.getElementById('btn-test');
+  if (!dot || !text) return; // 元素不存在时跳过
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
@@ -387,15 +387,64 @@ async function checkBackend() {
   if (btn) btn.disabled = true;
 }
 
+// ====== 网关管理 ======
+let currentGatewayID = 0;
+
+async function loadGateways() {
+  try {
+    const data = await api('/api/gateways');
+    const sel = document.getElementById('gateway-select');
+    sel.innerHTML = data.gateways.map(g =>
+      `<option value="${g.ID}" data-auth="${g.api_key_required}" data-name="${esc(g.Name)}">${esc(g.Name)}${g.api_key_required?' 🔒':''}</option>`
+    ).join('');
+    if (data.gateways.length > 0) {
+      currentGatewayID = data.gateways[0].ID;
+      sel.value = currentGatewayID;
+      updateGatewayBadge(data.gateways[0]);
+    }
+  } catch(e) {}
+}
+
+function onGatewayChange() {
+  currentGatewayID = parseInt(document.getElementById('gateway-select').value) || 0;
+  const opt = document.getElementById('gateway-select').selectedOptions[0];
+  updateGatewayBadge({api_key_required: opt?.dataset.auth === 'true', Name: opt?.dataset.name || ''});
+  refreshTools();
+  refreshLogs();
+}
+
+function updateGatewayBadge(gw) {
+  document.getElementById('gateway-auth-badge').innerHTML = gw.api_key_required ? '🔒 需要 API Key' : '🌐 公共网关';
+}
+
+function showGatewayForm() { document.getElementById('gateway-form').style.display = 'block'; }
+
+async function createGateway() {
+  const name = document.getElementById('gw-name').value.trim();
+  if (!name) { toast('请填写网关名称', 'warn'); return; }
+  try {
+    await api('/api/gateways', { method: 'POST',
+      body: JSON.stringify({name, description: document.getElementById('gw-desc').value.trim(),
+        api_key_required: document.getElementById('gw-auth').checked})
+    });
+    toast('网关创建成功', 'success');
+    document.getElementById('gateway-form').style.display = 'none';
+    document.getElementById('gw-name').value = document.getElementById('gw-desc').value = '';
+    document.getElementById('gw-auth').checked = false;
+    await loadGateways();
+  } catch(e) { toast('创建失败: '+e.message, 'error'); }
+}
+
 // ====== 刷新全部 ======
 async function refreshAll() {
+  await loadGateways();
   await Promise.all([refreshTools(), refreshSessions(), refreshLogs()]);
 }
 
 // ====== 工具列表 ======
 async function refreshTools() {
   try {
-    const tools = await api('/api/tools');
+    const tools = await api('/api/tools?gateway_id=' + currentGatewayID);
     const tbody = document.getElementById('tools-tbody');
     const empty = document.getElementById('tools-empty');
     const testerSelect = document.getElementById('test-tool');
@@ -491,7 +540,7 @@ async function createTool() {
   try {
     await api('/api/tools', {
       method: 'POST',
-      body: JSON.stringify({ tool_name: name, description: desc, input_schema: schema, backend_url: url, http_method: method })
+      body: JSON.stringify({ gateway_id: currentGatewayID, tool_name: name, description: desc, input_schema: schema, backend_url: url, http_method: method })
     });
     toast('创建成功', 'success');
     hideCreateForm();
@@ -531,7 +580,7 @@ async function previewImport() {
   previewDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">正在解析 API 文档...</div>';
 
   try {
-    const body = { base_url: baseURL || '' };
+    const body = { base_url: baseURL || '', gateway_id: currentGatewayID };
     if (url) body.url = url; else body.spec = spec;
 
     const res = await fetch('/api/tools/import?preview=true', {
@@ -589,7 +638,8 @@ async function confirmImport() {
 
   const body = {
     tool_names: checked,
-    base_url: importPreviewData.base_url
+    base_url: importPreviewData.base_url,
+    gateway_id: currentGatewayID,
   };
   // 重新发一次 spec/url 给导入接口
   const url = document.getElementById('import-url').value.trim();
@@ -687,7 +737,7 @@ async function testTool() {
   try {
     const data = await api('/api/tools/test', {
       method: 'POST',
-      body: JSON.stringify({ tool_name: toolName, args: args })
+      body: JSON.stringify({ tool_name: toolName, args: args, gateway_id: currentGatewayID })
     });
     resultBox.textContent = JSON.stringify(data, null, 2);
     toast('测试完成', 'success');

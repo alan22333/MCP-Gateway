@@ -7,7 +7,7 @@ import (
 func TestSessionManagerCreateAndGet(t *testing.T) {
 	mgr := NewSessionManager()
 
-	s := mgr.Create()
+	s := mgr.Create(0, "test")
 	if s.ID == "" {
 		t.Errorf("session ID 不应为空")
 	}
@@ -23,7 +23,7 @@ func TestSessionManagerCreateAndGet(t *testing.T) {
 
 func TestSessionManagerRemove(t *testing.T) {
 	mgr := NewSessionManager()
-	s := mgr.Create()
+	s := mgr.Create(0, "test")
 
 	mgr.Remove(s.ID)
 
@@ -43,7 +43,7 @@ func TestSessionManagerGetNotFound(t *testing.T) {
 
 func TestSessionChannelBuffered(t *testing.T) {
 	mgr := NewSessionManager()
-	s := mgr.Create()
+	s := mgr.Create(0, "test")
 
 	// 应能写入多于一缓冲的消息而不阻塞
 	for i := 0; i < 5; i++ {

@@ -1,4 +1,4 @@
-// 种子数据工具 —— 向数据库中写入模拟的企业工具配置
+// 种子数据工具 —— 创建演示网关和工具
 // 配合 mock-backend 使用，用于本地端到端测试
 //
 // 使用方式:
@@ -30,89 +30,68 @@ func main() {
 		log.Fatalf("自动建表失败: %v", err)
 	}
 
-	// 定义模拟工具配置 —— 对应 mock-backend 暴露的各个 API
+	// ── 创建三个网关 ──
+	gateways := []model.Gateway{
+		{Name: "Default Gateway", Description: "系统默认网关（所有工具）", APIKeyRequired: false},
+		{Name: "订单服务", Description: "订单查询、创建、详情", APIKeyRequired: true},
+		{Name: "客户与库存", Description: "客户查询 + 库存管理", APIKeyRequired: false},
+	}
+	var gwIDs [3]uint
+	for i := range gateways {
+		if err := repo.CreateGateway(&gateways[i]); err != nil {
+			log.Printf("创建网关 '%s' 失败（可能已存在）: %v", gateways[i].Name, err)
+			// 尝试查找已存在的
+			if g, e := repo.GetGatewayByName(gateways[i].Name); e == nil {
+				gwIDs[i] = g.ID
+				log.Printf("  → 使用已有网关 ID=%d", g.ID)
+			}
+		} else {
+			gwIDs[i] = gateways[i].ID
+			log.Printf("✓ 创建网关: %s (ID=%d, APIKey=%v)", gateways[i].Name, gateways[i].ID, gateways[i].APIKeyRequired)
+		}
+	}
+
+	defGW := gwIDs[0]
+	orderGW := gwIDs[1]
+	crmGW := gwIDs[2]
+
+	// ── Default Gateway: 7 个工具（全集）──
 	tools := []model.ApiTool{
-		{
-			ToolName:    "query_orders",
-			Description: "查询订单列表。可按客户ID(customer)和订单状态(status)筛选。状态包括: 待支付、已发货、已完成、退款中",
-			InputSchema: map[string]interface{}{
-				"customer": map[string]interface{}{"type": "string", "description": "客户ID，如 CUST-101"},
-				"status":   map[string]interface{}{"type": "string", "description": "订单状态"},
-			},
-			BackendUrl: "http://localhost:9090/api/orders",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
-		{
-			ToolName:    "get_order_detail",
-			Description: "根据订单ID查询单个订单的详细信息，包括金额、客户、状态和创建时间",
-			InputSchema: map[string]interface{}{
-				"id": map[string]interface{}{"type": "string", "description": "订单ID，如 ORD-001"},
-			},
-			BackendUrl: "http://localhost:9090/api/orders/{id}",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
-		{
-			ToolName:    "create_order",
-			Description: "创建一个新订单。需要提供客户ID和订单金额",
-			InputSchema: map[string]interface{}{
-				"customer": map[string]interface{}{"type": "string", "description": "客户ID"},
-				"amount":   map[string]interface{}{"type": "number", "description": "订单金额"},
-			},
-			BackendUrl: "http://localhost:9090/api/orders",
-			Enabled: true,
-			HttpMethod: "POST",
-		},
-		{
-			ToolName:    "query_customers",
-			Description: "查询客户列表。可按客户等级(level)筛选: vip / normal",
-			InputSchema: map[string]interface{}{
-				"level": map[string]interface{}{"type": "string", "description": "客户等级: vip 或 normal"},
-			},
-			BackendUrl: "http://localhost:9090/api/customers",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
-		{
-			ToolName:    "get_customer_detail",
-			Description: "根据客户ID查询单个客户的详细信息，包括姓名、等级和联系方式",
-			InputSchema: map[string]interface{}{
-				"id": map[string]interface{}{"type": "string", "description": "客户ID，如 CUST-101"},
-			},
-			BackendUrl: "http://localhost:9090/api/customers/{id}",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
-		{
-			ToolName:    "query_inventory",
-			Description: "查询库存信息。可按仓库名称(warehouse)筛选: 北京仓、上海仓、深圳仓",
-			InputSchema: map[string]interface{}{
-				"warehouse": map[string]interface{}{"type": "string", "description": "仓库名称"},
-			},
-			BackendUrl: "http://localhost:9090/api/inventory",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
-		{
-			ToolName:    "get_inventory_item",
-			Description: "根据SKU编码查询单个商品的库存详情，包括库存数量和所在仓库",
-			InputSchema: map[string]interface{}{
-				"sku": map[string]interface{}{"type": "string", "description": "商品SKU，如 SKU-1001"},
-			},
-			BackendUrl: "http://localhost:9090/api/inventory/{sku}",
-			Enabled: true,
-			HttpMethod: "GET",
-		},
+		{GatewayID: defGW, ToolName: "query_orders", Description: "查询订单列表。可按客户ID(customer)和订单状态(status)筛选", InputSchema: map[string]interface{}{"customer": map[string]interface{}{"type": "string"}, "status": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/orders", HttpMethod: "GET"},
+		{GatewayID: defGW, ToolName: "get_order_detail", Description: "根据订单ID查询单个订单详情", InputSchema: map[string]interface{}{"id": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/orders/{id}", HttpMethod: "GET"},
+		{GatewayID: defGW, ToolName: "create_order", Description: "创建新订单，需提供客户ID和金额", InputSchema: map[string]interface{}{"customer": map[string]interface{}{"type": "string"}, "amount": map[string]interface{}{"type": "number"}}, BackendUrl: "http://localhost:9090/api/orders", HttpMethod: "POST"},
+		{GatewayID: defGW, ToolName: "query_customers", Description: "查询客户列表，可按等级(level)筛选", InputSchema: map[string]interface{}{"level": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/customers", HttpMethod: "GET"},
+		{GatewayID: defGW, ToolName: "get_customer_detail", Description: "根据客户ID查询客户详情", InputSchema: map[string]interface{}{"id": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/customers/{id}", HttpMethod: "GET"},
+		{GatewayID: defGW, ToolName: "query_inventory", Description: "查询库存信息，可按仓库筛选", InputSchema: map[string]interface{}{"warehouse": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/inventory", HttpMethod: "GET"},
+		{GatewayID: defGW, ToolName: "get_inventory_item", Description: "根据SKU查询商品库存详情", InputSchema: map[string]interface{}{"sku": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/inventory/{sku}", HttpMethod: "GET"},
+
+		// ── 订单服务网关: 3 个订单工具 ──
+		{GatewayID: orderGW, ToolName: "query_orders", Description: "查询订单列表。可按客户ID(customer)和订单状态(status)筛选", InputSchema: map[string]interface{}{"customer": map[string]interface{}{"type": "string"}, "status": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/orders", HttpMethod: "GET"},
+		{GatewayID: orderGW, ToolName: "get_order_detail", Description: "根据订单ID查询单个订单详情", InputSchema: map[string]interface{}{"id": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/orders/{id}", HttpMethod: "GET"},
+		{GatewayID: orderGW, ToolName: "create_order", Description: "创建新订单，需提供客户ID和金额", InputSchema: map[string]interface{}{"customer": map[string]interface{}{"type": "string"}, "amount": map[string]interface{}{"type": "number"}}, BackendUrl: "http://localhost:9090/api/orders", HttpMethod: "POST"},
+
+		// ── 客户与库存网关: 4 个工具 ──
+		{GatewayID: crmGW, ToolName: "query_customers", Description: "查询客户列表，可按等级(level)筛选", InputSchema: map[string]interface{}{"level": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/customers", HttpMethod: "GET"},
+		{GatewayID: crmGW, ToolName: "get_customer_detail", Description: "根据客户ID查询客户详情", InputSchema: map[string]interface{}{"id": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/customers/{id}", HttpMethod: "GET"},
+		{GatewayID: crmGW, ToolName: "query_inventory", Description: "查询库存信息，可按仓库筛选", InputSchema: map[string]interface{}{"warehouse": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/inventory", HttpMethod: "GET"},
+		{GatewayID: crmGW, ToolName: "get_inventory_item", Description: "根据SKU查询商品库存详情", InputSchema: map[string]interface{}{"sku": map[string]interface{}{"type": "string"}}, BackendUrl: "http://localhost:9090/api/inventory/{sku}", HttpMethod: "GET"},
 	}
 
 	for i := range tools {
 		if err := repo.Create(&tools[i]); err != nil {
 			log.Printf("创建工具 '%s' 失败（可能已存在）: %v", tools[i].ToolName, err)
 		} else {
-			log.Printf("✓ 已注册工具: %-25s %s %s", tools[i].ToolName, tools[i].HttpMethod, tools[i].BackendUrl)
+			log.Printf("✓ [GW:%d] %-22s %s %s", tools[i].GatewayID, tools[i].ToolName, tools[i].HttpMethod, tools[i].BackendUrl)
 		}
 	}
 
+	// ── 为订单服务网关创建 API Key ──
+	orderKey := "mcp-gw-sk-orders-2026"
+	if _, err := repo.GetApiKeyByValue(orderKey); err != nil {
+		repo.CreateApiKey(&model.ApiKey{GatewayID: orderGW, Key: orderKey, Name: "订单服务演示密钥"})
+		log.Printf("✓ 创建 API Key: %s → 订单服务网关", orderKey)
+	}
+
 	log.Println("\n种子数据写入完成！")
+	log.Println("网关: Default Gateway(公开) / 订单服务(需Key) / 客户与库存(公开)")
 }

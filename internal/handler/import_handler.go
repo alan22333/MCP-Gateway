@@ -33,6 +33,10 @@ func (h *ImportHandler) Import(c *gin.Context) {
 		Spec      string   `json:"spec"`
 		BaseURL   string   `json:"base_url"`
 		ToolNames []string `json:"tool_names"`
+		GatewayID uint     `json:"gateway_id"`
+	}
+	if input.GatewayID == 0 {
+		input.GatewayID = parseGatewayID(c)
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(400, gin.H{"error": "请求格式错误: " + err.Error()})
@@ -82,7 +86,7 @@ func (h *ImportHandler) Import(c *gin.Context) {
 			continue
 		}
 		tools = append(tools, model.ApiTool{
-			ToolName: p.ToolName, Description: p.Description,
+			GatewayID: input.GatewayID, ToolName: p.ToolName, Description: p.Description,
 			InputSchema: p.InputSchema, BackendUrl: p.BackendUrl, HttpMethod: p.HttpMethod,
 		})
 	}

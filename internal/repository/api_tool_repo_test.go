@@ -47,7 +47,7 @@ func TestCreateAndGetAll(t *testing.T) {
 		t.Errorf("自增 ID 应该被填充")
 	}
 
-	tools, err := repo.GetAll()
+	tools, err := repo.GetAllTools()
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestGetByToolName(t *testing.T) {
 	repo.Create(t1)
 	repo.Create(t2)
 
-	found, err := repo.GetByToolName("tool_b")
+	found, err := repo.GetByToolName(0, "tool_b")
 	if err != nil {
 		t.Fatalf("查询失败: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestGetByToolName(t *testing.T) {
 		t.Errorf("HttpMethod 期望 POST, 得到 %s", found.HttpMethod)
 	}
 
-	_, err = repo.GetByToolName("not_exist")
+	_, err = repo.GetByToolName(0, "not_exist")
 	if err == nil {
 		t.Errorf("查询不存在的工具应该返回错误")
 	}
@@ -95,7 +95,7 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("删除失败: %v", err)
 	}
 
-	tools, _ := repo.GetAll()
+	tools, _ := repo.GetAllTools()
 	if len(tools) != 0 {
 		t.Errorf("删除后应无记录，但还有 %d 条", len(tools))
 	}
@@ -114,7 +114,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("更新失败: %v", err)
 	}
 
-	updated, _ := repo.GetByToolName("old_name")
+	updated, _ := repo.GetByToolName(0, "old_name")
 	if updated.Description != "new_desc" {
 		t.Errorf("Description 期望 new_desc, 得到 %s", updated.Description)
 	}

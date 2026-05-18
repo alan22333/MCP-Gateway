@@ -1,11 +1,10 @@
-// AI 客户端模拟器 —— 模拟大模型与 MCP Gateway 的完整交互流程
+// AI 客户端模拟器 —— 测试多网关隔离、工具权限、跨网关调用拒绝
 //
 // 使用方式:
 //
 //	go run cmd/mock-client/main.go
 //
-// 前提：需要先启动 gateway (go run cmd/server/main.go)
-// 和 mock-backend (go run cmd/mock-backend/main.go)
+// 前提：go run cmd/server/main.go  +  go run cmd/mock-backend/main.go  +  go run cmd/seed/main.go
 package main
 
 import (
@@ -26,57 +25,187 @@ var (
 	cGreen  = "\033[32m"
 	cYellow = "\033[33m"
 	cCyan   = "\033[36m"
+	cRed    = "\033[31m"
 	cReset  = "\033[0m"
 )
+
+type testScenario struct {
+	name    string
+	sseURL  string // 带 gateway 参数或 api_key 参数
+	tools   int    // 期望的工具数量
+	allowed []string
+	rejected []string
+}
 
 func main() {
 	log.SetFlags(0)
 	printBanner()
 
-	// Step 1: 建立 SSE 连接，获取 session_id
-	resp, err := http.Get(gatewayURL + "/mcp/sse")
+	scenarios := []testScenario{
+		{
+			name:     "Default Gateway (无参数)",
+			sseURL:   "/mcp/sse",
+			tools:    7,
+			allowed:  []string{"query_orders", "query_customers", "query_inventory"},
+			rejected: []string{},
+		},
+		{
+			name:     "Default Gateway (gateway=Default Gateway)",
+			sseURL:   "/mcp/sse?gateway=Default+Gateway",
+			tools:    7,
+			allowed:  []string{"query_orders", "get_customer_detail"},
+			rejected: []string{},
+		},
+		{
+			name:     "订单服务网关 (gateway=订单服务)",
+			sseURL:   "/mcp/sse?gateway=%E8%AE%A2%E5%8D%95%E6%9C%8D%E5%8A%A1",
+			tools:    3,
+			allowed:  []string{"query_orders", "get_order_detail", "create_order"},
+			rejected: []string{"query_customers", "query_inventory"},
+		},
+		{
+			name:     "客户与库存网关 (gateway=客户与库存)",
+			sseURL:   "/mcp/sse?gateway=%E5%AE%A2%E6%88%B7%E4%B8%8E%E5%BA%93%E5%AD%98",
+			tools:    4,
+			allowed:  []string{"query_customers", "get_customer_detail", "query_inventory"},
+			rejected: []string{"query_orders", "create_order"},
+		},
+	}
+
+	allPassed := true
+	for _, sc := range scenarios {
+		if !runScenario(sc) {
+			allPassed = false
+		}
+	}
+
+	fmt.Println(strings.Repeat("=", 55))
+	if allPassed {
+		log.Printf("%s  全部场景通过 ✓%s", cGreen, cReset)
+	} else {
+		log.Printf("%s  存在失败场景 ✗%s", cRed, cReset)
+	}
+	fmt.Println(strings.Repeat("=", 55))
+}
+
+func runScenario(sc testScenario) bool {
+	log.Printf("\n%s━━━ %s ━━━%s", cYellow, sc.name, cReset)
+
+	resp, err := http.Get(gatewayURL + sc.sseURL)
 	if err != nil {
-		log.Fatalf("SSE 连接失败: %v", err)
+		log.Printf("%s  ✗ SSE 连接失败: %v%s", cRed, err, cReset)
+		return false
 	}
 	defer resp.Body.Close()
 
 	reader := bufio.NewReader(resp.Body)
 	sessionID := readSessionID(reader)
-	log.Printf("%s✓ SSE 会话建立: %s%s\n", cGreen, sessionID, cReset)
-
-	// Step 2: 启动后台 goroutine 读取 SSE 响应
 	responseCh := make(chan string, 16)
 	go readSSE(reader, responseCh)
-
-	// 等待 SSE 流稳定
 	time.Sleep(200 * time.Millisecond)
 
-	// Step 3: 握手 → 获取工具列表 → 调用工具
-	sendReq(sessionID, "initialize", nil, "1")
+	// 握手
+	sendReq(sessionID, "initialize", nil, "init")
 	waitResp(responseCh, "initialize")
 
-	sendReq(sessionID, "tools/list", nil, "2")
-	waitResp(responseCh, "tools/list")
+	// 获取工具列表并验证数量
+	sendReq(sessionID, "tools/list", nil, "list")
+	n := countTools(responseCh)
+	if n == sc.tools {
+		log.Printf("  %s✓ 工具数量: %d (期望 %d)%s", cGreen, n, sc.tools, cReset)
+	} else {
+		log.Printf("  %s✗ 工具数量: %d (期望 %d)%s", cRed, n, sc.tools, cReset)
+		return false
+	}
 
-	// 模拟 AI 调用多种工具
-	callTool(sessionID, "query_customers", map[string]interface{}{"level": "vip"}, responseCh)
-	callTool(sessionID, "get_order_detail", map[string]interface{}{"id": "ORD-001"}, responseCh)
-	callTool(sessionID, "query_inventory", map[string]interface{}{"warehouse": "北京仓"}, responseCh)
-	callTool(sessionID, "create_order", map[string]interface{}{"customer": "CUST-101", "amount": 599.00}, responseCh)
-	callTool(sessionID, "query_orders", map[string]interface{}{"customer": "CUST-102"}, responseCh)
+	// 验证允许的工具能调用
+	for _, tool := range sc.allowed {
+		if !toolCall(sessionID, tool, true, responseCh) {
+			return false
+		}
+	}
 
-	log.Printf("\n%s══════════════════════════════════════%s", cGreen, cReset)
-	log.Printf("%s  端到端测试全部完成 ✓%s", cGreen, cReset)
-	log.Printf("%s══════════════════════════════════════%s\n", cGreen, cReset)
+	// 验证跨网关工具被拒绝
+	for _, tool := range sc.rejected {
+		if !toolCall(sessionID, tool, false, responseCh) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func toolCall(sessionID, toolName string, expectSuccess bool, ch <-chan string) bool {
+	args := map[string]interface{}{"id": "TEST-001", "customer": "CUST-101", "amount": 100}
+	// 根据工具名精简参数
+	switch toolName {
+	case "query_customers":
+		args = map[string]interface{}{"level": "vip"}
+	case "query_inventory":
+		args = map[string]interface{}{"warehouse": "北京仓"}
+	case "query_orders":
+		args = map[string]interface{}{"customer": "CUST-101"}
+	case "create_order":
+		args = map[string]interface{}{"customer": "CUST-101", "amount": 100.0}
+	}
+
+	argsJSON, _ := json.Marshal(args)
+	params := map[string]interface{}{"name": toolName, "arguments": json.RawMessage(argsJSON)}
+	paramsJSON, _ := json.Marshal(params)
+	sendReq(sessionID, "tools/call", json.RawMessage(paramsJSON), "call-"+toolName)
+
+	data := waitResp(ch, toolName)
+	if data == "" {
+		return !expectSuccess
+	}
+
+	var rpc struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	json.Unmarshal([]byte(data), &rpc)
+
+	if expectSuccess {
+		if rpc.Error != nil {
+			log.Printf("  %s✗ %s 应成功但返回了错误: %s%s", cRed, toolName, rpc.Error.Message, cReset)
+			return false
+		}
+		log.Printf("  %s✓ %s 调用成功%s", cGreen, toolName, cReset)
+	} else {
+		if rpc.Error != nil {
+			log.Printf("  %s✓ %s 正确被拒绝: %s%s", cGreen, toolName, rpc.Error.Message, cReset)
+		} else {
+			log.Printf("  %s✗ %s 应被拒绝但调用成功了（跨网关隔离失效）%s", cRed, toolName, cReset)
+			return false
+		}
+	}
+	return true
+}
+
+func countTools(ch <-chan string) int {
+	select {
+	case data := <-ch:
+		var wrapper struct {
+			Result struct {
+				Tools []struct{ Name string } `json:"tools"`
+			} `json:"result"`
+		}
+		json.Unmarshal([]byte(data), &wrapper)
+		return len(wrapper.Result.Tools)
+	case <-time.After(5 * time.Second):
+		return 0
+	}
 }
 
 func printBanner() {
 	fmt.Println(strings.Repeat("=", 55))
-	fmt.Println("  AI 客户端模拟器 — MCP Gateway E2E 测试")
+	fmt.Println("  AI 客户端模拟器 — 多网关隔离测试")
 	fmt.Println(strings.Repeat("=", 55))
 }
 
-// readSessionID 从 SSE 事件流中读取第一条事件，提取 session_id
 func readSessionID(reader *bufio.Reader) string {
 	for {
 		line, err := reader.ReadString('\n')
@@ -94,7 +223,6 @@ func readSessionID(reader *bufio.Reader) string {
 	}
 }
 
-// readSSE 后台持续读取 SSE 事件，推送到 channel
 func readSSE(reader *bufio.Reader, ch chan<- string) {
 	for {
 		line, err := reader.ReadString('\n')
@@ -106,7 +234,6 @@ func readSSE(reader *bufio.Reader, ch chan<- string) {
 		}
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data: "))
-			// 跳过 session_id 事件（已处理）
 			var temp map[string]string
 			if json.Unmarshal([]byte(data), &temp) == nil {
 				if _, ok := temp["session_id"]; ok {
@@ -118,115 +245,27 @@ func readSSE(reader *bufio.Reader, ch chan<- string) {
 	}
 }
 
-// sendReq 发送 JSON-RPC 请求到网关
 func sendReq(sessionID, method string, params json.RawMessage, id string) {
-	req := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      id,
-		"method":  method,
-	}
+	req := map[string]interface{}{"jsonrpc": "2.0", "id": id, "method": method}
 	if params != nil {
 		req["params"] = params
 	}
 	body, _ := json.Marshal(req)
-	resp, err := http.Post(
+	resp, _ := http.Post(
 		fmt.Sprintf("%s/mcp/message?session_id=%s", gatewayURL, sessionID),
-		"application/json",
-		bytes.NewReader(body),
+		"application/json", bytes.NewReader(body),
 	)
-	if err != nil {
-		log.Printf("  ✗ 发送失败: %v", err)
-		return
+	if resp != nil {
+		resp.Body.Close()
 	}
-	resp.Body.Close()
 }
 
-// callTool 调用一个工具并等待响应
-func callTool(sessionID, toolName string, args map[string]interface{}, ch <-chan string) {
-	log.Printf("\n%s── 调用工具: %s ──%s", cYellow, toolName, cReset)
-
-	argsJSON, _ := json.Marshal(args)
-	params := map[string]interface{}{
-		"name":      toolName,
-		"arguments": json.RawMessage(argsJSON),
-	}
-	paramsJSON, _ := json.Marshal(params)
-
-	sendReq(sessionID, "tools/call", json.RawMessage(paramsJSON), "call-"+toolName)
-	waitResp(ch, toolName)
-}
-
-// waitResp 等待一个 SSE 响应并格式化输出
-func waitResp(ch <-chan string, context string) {
+func waitResp(ch <-chan string, context string) string {
 	select {
 	case data := <-ch:
-		printResult(data, context)
+		return data
 	case <-time.After(5 * time.Second):
-		log.Printf("  %s✗ 超时：5s 内未收到响应%s", cYellow, cReset)
-	}
-}
-
-// printResult 格式化打印 JSON-RPC 响应
-func printResult(data string, context string) {
-	var rpc struct {
-		Result json.RawMessage `json:"result"`
-		Error  *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(data), &rpc); err != nil {
-		log.Printf("  解析失败: %v", err)
-		return
-	}
-
-	if rpc.Error != nil {
-		log.Printf("  %s✗ 错误 [%d]: %s%s", cYellow, rpc.Error.Code, rpc.Error.Message, cReset)
-		return
-	}
-
-	switch context {
-	case "initialize":
-		var result map[string]interface{}
-		json.Unmarshal(rpc.Result, &result)
-		pretty, _ := json.MarshalIndent(result, "  ", "  ")
-		log.Printf("  %s✓ 握手成功%s\n  %s", cGreen, cReset, string(pretty))
-
-	case "tools/list":
-		var result struct {
-			Tools []struct {
-				Name        string `json:"name"`
-				Description string `json:"description"`
-			} `json:"tools"`
-		}
-		json.Unmarshal(rpc.Result, &result)
-		log.Printf("  %s✓ 获取到 %d 个可用工具:%s", cGreen, len(result.Tools), cReset)
-		for _, t := range result.Tools {
-			log.Printf("    • %s%-25s%s %s", cCyan, t.Name, cReset, t.Description)
-		}
-
-	default:
-		// tools/call 返回的是 CallToolResult
-		var callResult struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		}
-		if err := json.Unmarshal(rpc.Result, &callResult); err != nil {
-			pretty, _ := json.MarshalIndent(rpc.Result, "  ", "  ")
-			log.Printf("  %s✓ 响应:%s\n  %s", cGreen, cReset, string(pretty))
-			return
-		}
-		if len(callResult.Content) > 0 && callResult.Content[0].Type == "text" {
-			// 尝试格式化 text 中的 JSON
-			var formatted interface{}
-			if json.Unmarshal([]byte(callResult.Content[0].Text), &formatted) == nil {
-				pretty, _ := json.MarshalIndent(formatted, "  ", "  ")
-				log.Printf("  %s✓ 调用成功 →%s\n  %s", cGreen, cReset, string(pretty))
-			} else {
-				log.Printf("  %s✓ 调用成功 →%s %s", cGreen, cReset, callResult.Content[0].Text)
-			}
-		}
+		log.Printf("  %s✗ 超时%s", cYellow, cReset)
+		return ""
 	}
 }

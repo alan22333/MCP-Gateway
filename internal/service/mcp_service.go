@@ -26,26 +26,29 @@ type McpService struct {
 	logger    *zap.Logger
 }
 
+// NewMcpService 创建 MCP 服务实例，并注入仓库、代理、熔断器和缓存实现。
 func NewMcpService(repo *repository.ApiToolRepo, p *proxy.HttpProxy, cb *proxy.CircuitBreakerManager, c cache.ToolCache, cacheTTL time.Duration, logger *zap.Logger) *McpService {
 	return &McpService{repo: repo, proxy: p, cbManager: cb, cache: c, cacheTTL: cacheTTL, logger: logger}
 }
 
-func (s *McpService) Process(ctx context.Context, req *mcp.RPCRequest) *mcp.RPCResponse {
+// Process 是 MCP JSON-RPC 请求的统一入口，根据 method 分发到不同处理逻辑。
+func (s *McpService) Process(ctx context.Context, gatewayID uint, req *mcp.RPCRequest) *mcp.RPCResponse {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req)
 	case "tools/list":
-		return s.handleToolsList(req)
+		return s.handleToolsList(gatewayID, req)
 	case "tools/call":
-		return s.handleToolsCall(ctx, req, "MCP")
+		return s.handleToolsCall(ctx, gatewayID, req, "MCP")
 	default:
 		s.logger.Warn("不支持的方法", zap.String("method", req.Method))
 		return mcp.NewError(req.ID, mcp.ErrCodeMethod, "不支持的方法: "+req.Method)
 	}
 }
 
-func (s *McpService) CallTool(ctx context.Context, toolName string, args json.RawMessage, caller string) (*proxy.ProxyResponse, *mcp.RPCResponse) {
-	tool, err := s.repo.GetByToolName(toolName)
+// CallTool 供 HTTP handler 直接调用工具，返回底层代理响应和 MCP 响应。
+func (s *McpService) CallTool(ctx context.Context, gatewayID uint, toolName string, args json.RawMessage, caller string) (*proxy.ProxyResponse, *mcp.RPCResponse) {
+	tool, err := s.repo.GetByToolName(gatewayID, toolName)
 	if err != nil {
 		return nil, mcp.NewError(nil, mcp.ErrCodeMethod, fmt.Sprintf("工具不存在: %s", toolName))
 	}
@@ -108,6 +111,7 @@ func (s *McpService) CallTool(ctx context.Context, toolName string, args json.Ra
 
 // ====== 私有方法 ======
 
+// handleInitialize 返回 MCP 握手所需的基础协议信息和服务能力声明。
 func (s *McpService) handleInitialize(req *mcp.RPCRequest) *mcp.RPCResponse {
 	result := map[string]interface{}{
 		"protocolVersion": "0.1.0",
@@ -118,8 +122,9 @@ func (s *McpService) handleInitialize(req *mcp.RPCRequest) *mcp.RPCResponse {
 	return mcp.NewSuccess(req.ID, result)
 }
 
-func (s *McpService) handleToolsList(req *mcp.RPCRequest) *mcp.RPCResponse {
-	tools, err := s.repo.GetEnabled()
+// handleToolsList 查询当前网关下已启用的工具，并转换成 MCP 工具列表。
+func (s *McpService) handleToolsList(gatewayID uint, req *mcp.RPCRequest) *mcp.RPCResponse {
+	tools, err := s.repo.GetToolsByGateway(gatewayID)
 	if err != nil {
 		s.logger.Error("查询工具列表失败", zap.Error(err))
 		return mcp.NewError(req.ID, mcp.ErrCodeInternal, "查询工具列表失败")
@@ -128,11 +133,12 @@ func (s *McpService) handleToolsList(req *mcp.RPCRequest) *mcp.RPCResponse {
 	for _, t := range tools {
 		mcpTools = append(mcpTools, apiToolToMCPTool(&t))
 	}
-	s.logger.Info("返回工具列表", zap.Int("count", len(mcpTools)))
+	s.logger.Info("返回工具列表", zap.Int("count", len(mcpTools)), zap.Uint("gateway_id", gatewayID))
 	return mcp.NewSuccess(req.ID, &mcp.ToolsListResult{Tools: mcpTools})
 }
 
-func (s *McpService) handleToolsCall(ctx context.Context, req *mcp.RPCRequest, caller string) *mcp.RPCResponse {
+// handleToolsCall 解析 MCP 调用参数，并把执行流程交给 doToolsCall。
+func (s *McpService) handleToolsCall(ctx context.Context, gatewayID uint, req *mcp.RPCRequest, caller string) *mcp.RPCResponse {
 	var params mcp.CallToolParams
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return mcp.NewError(req.ID, mcp.ErrCodeInvalid, "参数解析失败: "+err.Error())
@@ -140,13 +146,14 @@ func (s *McpService) handleToolsCall(ctx context.Context, req *mcp.RPCRequest, c
 	if params.Name == "" {
 		return mcp.NewError(req.ID, mcp.ErrCodeInvalid, "缺少工具名称")
 	}
-	return s.doToolsCall(ctx, req.ID, params, caller)
+	return s.doToolsCall(ctx, gatewayID, req.ID, params, caller)
 }
 
-func (s *McpService) doToolsCall(ctx context.Context, id interface{}, params mcp.CallToolParams, caller string) *mcp.RPCResponse {
-	tool, err := s.repo.GetByToolName(params.Name)
+// doToolsCall 执行完整的工具调用流程：查工具、校验参数、命中缓存、转发请求、写缓存、组装响应。
+func (s *McpService) doToolsCall(ctx context.Context, gatewayID uint, id interface{}, params mcp.CallToolParams, caller string) *mcp.RPCResponse {
+	tool, err := s.repo.GetByToolName(gatewayID, params.Name)
 	if err != nil {
-		s.logger.Warn("工具不存在", zap.String("tool", params.Name))
+		s.logger.Warn("工具不存在", zap.String("tool", params.Name), zap.Uint("gateway_id", gatewayID))
 		return mcp.NewError(id, mcp.ErrCodeMethod, fmt.Sprintf("工具不存在: %s", params.Name))
 	}
 
@@ -211,6 +218,7 @@ func (s *McpService) doToolsCall(ctx context.Context, id interface{}, params mcp
 	})
 }
 
+// logCall 异步写入调用日志，避免日志落库影响主请求路径。
 func (s *McpService) logCall(toolName, args string, resp *proxy.ProxyResponse, err error, latency int64, caller string) {
 	log := &model.CallLog{ToolName: toolName, RequestArgs: args, LatencyMs: latency, Caller: caller}
 	if resp != nil {
@@ -227,6 +235,7 @@ func (s *McpService) logCall(toolName, args string, resp *proxy.ProxyResponse, e
 	}()
 }
 
+// apiToolToMCPTool 将内部工具模型转换为 MCP 协议返回的工具结构。
 func apiToolToMCPTool(t *model.ApiTool) mcp.Tool {
 	return mcp.Tool{
 		Name:        t.ToolName,

@@ -11,11 +11,13 @@ import (
 
 // Session SSE 会话，每个已连接的大模型客户端对应一个 Session
 type Session struct {
-	ID       string
-	Response chan *mcp.RPCResponse // 待发送给客户端的响应队列
-	Done     chan struct{}         // 连接断开时关闭
-	Limiter  *rate.Limiter          // 令牌桶限流器（per-session）
-	LimitEnabled bool               // 是否启用限流
+	ID           string
+	GatewayID    uint             // 所属网关 ID
+	GatewayName  string           // 所属网关名称（日志用）
+	Response     chan *mcp.RPCResponse
+	Done         chan struct{}
+	Limiter      *rate.Limiter
+	LimitEnabled bool
 }
 
 // SessionManager 管理所有活跃的 SSE 会话
@@ -43,12 +45,14 @@ func (m *SessionManager) SetRateLimit(rps float64, burst int) {
 	m.limiterBurst = burst
 }
 
-// Create 创建一个新的会话
-func (m *SessionManager) Create() *Session {
+// Create 创建一个新会话，绑定到指定网关
+func (m *SessionManager) Create(gatewayID uint, gatewayName string) *Session {
 	s := &Session{
-		ID:       generateSessionID(),
-		Response: make(chan *mcp.RPCResponse, 16),
-		Done:     make(chan struct{}),
+		ID:          generateSessionID(),
+		GatewayID:   gatewayID,
+		GatewayName: gatewayName,
+		Response:    make(chan *mcp.RPCResponse, 16),
+		Done:        make(chan struct{}),
 	}
 	if m.limitEnabled {
 		s.Limiter = rate.NewLimiter(rate.Limit(m.limiterRPS), m.limiterBurst)
@@ -83,7 +87,9 @@ func (m *SessionManager) Remove(id string) {
 
 // SessionInfo 对外暴露的会话信息（不包含 channel）
 type SessionInfo struct {
-	ID string `json:"id"`
+	ID          string `json:"id"`
+	GatewayID   uint   `json:"gateway_id"`
+	GatewayName string `json:"gateway_name"`
 }
 
 // List 返回所有活跃会话的信息
@@ -91,8 +97,8 @@ func (m *SessionManager) List() []SessionInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	list := make([]SessionInfo, 0, len(m.sessions))
-	for id := range m.sessions {
-		list = append(list, SessionInfo{ID: id})
+	for _, s := range m.sessions {
+		list = append(list, SessionInfo{ID: s.ID, GatewayID: s.GatewayID, GatewayName: s.GatewayName})
 	}
 	return list
 }

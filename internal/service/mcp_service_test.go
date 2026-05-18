@@ -44,7 +44,7 @@ func setupService(t *testing.T) *McpService {
 func TestHandleInitialize(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "1", Method: "initialize"}
-	resp := svc.Process(context.Background(), req)
+	resp := svc.Process(context.Background(), 0, req)
 	if resp.Error != nil {
 		t.Fatalf("initialize 不应返回错误: %+v", resp.Error)
 	}
@@ -53,7 +53,7 @@ func TestHandleInitialize(t *testing.T) {
 func TestHandleToolsList(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "2", Method: "tools/list"}
-	resp := svc.Process(context.Background(), req)
+	resp := svc.Process(context.Background(), 0, req)
 	if resp.Error != nil {
 		t.Fatalf("tools/list 不应返回错误: %+v", resp.Error)
 	}
@@ -73,7 +73,7 @@ func TestHandleToolsCallNotFound(t *testing.T) {
 	svc := setupService(t)
 	params, _ := json.Marshal(mcp.CallToolParams{Name: "nonexistent", Arguments: nil})
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "3", Method: "tools/call", Params: params}
-	resp := svc.Process(context.Background(), req)
+	resp := svc.Process(context.Background(), 0, req)
 	if resp.Error == nil {
 		t.Fatalf("调用不存在的工具应返回错误")
 	}
@@ -107,7 +107,7 @@ func TestHandleToolsCallSuccess(t *testing.T) {
 		Arguments: json.RawMessage(`{"message":"hello"}`),
 	})
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "4", Method: "tools/call", Params: params}
-	resp := svc.Process(context.Background(), req)
+	resp := svc.Process(context.Background(), 0, req)
 	if resp.Error != nil {
 		t.Fatalf("tools/call 不应返回错误: %+v", resp.Error)
 	}
@@ -123,7 +123,7 @@ func TestHandleToolsCallSuccess(t *testing.T) {
 func TestHandleUnknownMethod(t *testing.T) {
 	svc := setupService(t)
 	req := &mcp.RPCRequest{JSONRPC: "2.0", ID: "5", Method: "unknown/thing"}
-	resp := svc.Process(context.Background(), req)
+	resp := svc.Process(context.Background(), 0, req)
 	if resp.Error == nil {
 		t.Fatalf("未知方法应返回错误")
 	}
