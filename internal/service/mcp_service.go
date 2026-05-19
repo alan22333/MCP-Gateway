@@ -40,6 +40,9 @@ func (s *McpService) Process(ctx context.Context, gatewayID uint, req *mcp.RPCRe
 		return s.handleToolsList(gatewayID, req)
 	case "tools/call":
 		return s.handleToolsCall(ctx, gatewayID, req, "MCP")
+	case "notifications/initialized":
+		s.handleInitialized(req)
+		return nil // Notification 不返回响应
 	default:
 		s.logger.Warn("不支持的方法", zap.String("method", req.Method))
 		return mcp.NewError(req.ID, mcp.ErrCodeMethod, "不支持的方法: "+req.Method)
@@ -111,15 +114,22 @@ func (s *McpService) CallTool(ctx context.Context, gatewayID uint, toolName stri
 
 // ====== 私有方法 ======
 
-// handleInitialize 返回 MCP 握手所需的基础协议信息和服务能力声明。
+// handleInitialize 返回 MCP 握手所需的基础协议信息和服务能力声明（typed result）。
 func (s *McpService) handleInitialize(req *mcp.RPCRequest) *mcp.RPCResponse {
-	result := map[string]interface{}{
-		"protocolVersion": "0.1.0",
-		"serverInfo":      map[string]string{"name": "mcp-gateway-go-demo", "version": "1.0.0"},
-		"capabilities":    map[string]interface{}{"tools": map[string]bool{}},
+	result := &mcp.InitializeResult{
+		ProtocolVersion: mcp.ProtocolVersion, // "2025-03-26"
+		ServerInfo:      mcp.ServerInfo{Name: "mcp-gateway-go-demo", Version: "2.0.0"},
+		Capabilities: mcp.ServerCapabilities{
+			Tools: &mcp.ToolsCapability{ListChanged: false},
+		},
 	}
-	s.logger.Info("MCP 握手完成")
+	s.logger.Info("MCP 握手完成", zap.String("protocol", mcp.ProtocolVersion))
 	return mcp.NewSuccess(req.ID, result)
+}
+
+// handleInitialized 处理客户端 initialized 通知（Streamable HTTP 握手第二步）
+func (s *McpService) handleInitialized(req *mcp.RPCRequest) {
+	s.logger.Info("客户端初始化完成通知")
 }
 
 // handleToolsList 查询当前网关下已启用的工具，并转换成 MCP 工具列表。

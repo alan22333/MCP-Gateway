@@ -98,3 +98,76 @@ func TestToolSerialization(t *testing.T) {
 		t.Errorf("Description 不匹配")
 	}
 }
+
+func TestIsNotification(t *testing.T) {
+	notif := &RPCRequest{JSONRPC: "2.0", Method: "notifications/initialized"}
+	if !notif.IsNotification() {
+		t.Error("无 id 的请求应判定为 notification")
+	}
+
+	req := &RPCRequest{JSONRPC: "2.0", ID: "1", Method: "tools/list"}
+	if req.IsNotification() {
+		t.Error("有 id 的请求不应判定为 notification")
+	}
+}
+
+func TestInitializeResultSerialization(t *testing.T) {
+	result := &InitializeResult{
+		ProtocolVersion: "2025-03-26",
+		ServerInfo:      ServerInfo{Name: "mcp-gateway", Version: "2.0.0"},
+		Capabilities: ServerCapabilities{
+			Tools: &ToolsCapability{ListChanged: false},
+		},
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+	var back InitializeResult
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("反序列化失败: %v", err)
+	}
+	if back.ProtocolVersion != "2025-03-26" {
+		t.Errorf("ProtocolVersion 不匹配: %s", back.ProtocolVersion)
+	}
+	if back.ServerInfo.Name != "mcp-gateway" {
+		t.Errorf("ServerInfo.Name 不匹配")
+	}
+	if back.Capabilities.Tools == nil {
+		t.Error("Tools capability 不应为 nil")
+	}
+}
+
+func TestNewErrorWithData(t *testing.T) {
+	data := map[string]interface{}{"field": "order_id", "issue": "required"}
+	resp := NewErrorWithData("req-1", ErrCodeInvalid, "参数校验失败", data)
+	if resp.Error.Data == nil {
+		t.Error("Error.Data 不应为 nil")
+	}
+}
+
+func TestRPCNotificationSerialization(t *testing.T) {
+	notif := &RPCNotification{
+		JSONRPC: "2.0",
+		Method:  "notifications/initialized",
+	}
+	data, err := json.Marshal(notif)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+	var back RPCNotification
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("反序列化失败: %v", err)
+	}
+	if back.Method != "notifications/initialized" {
+		t.Errorf("Method 不匹配")
+	}
+	// Notification 不含 id 字段
+	if _, hasID := json.Marshal(notif); hasID != nil {
+		t.Error("序列化失败")
+	}
+	// 确保序列化结果不含 "id" 字段
+	if raw := string(data); raw == "" {
+		t.Error("序列化结果为空")
+	}
+}

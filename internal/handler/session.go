@@ -4,9 +4,11 @@ package handler
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"mcp-gateway-go-demo/pkg/mcp"
 
+	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 )
 
@@ -21,20 +23,27 @@ type Session struct {
 	LimitEnabled bool
 
 	// 并发控制：用带缓冲 channel 作为信号量
-	// 每次 tools/call 先往 channel 发送一个 token，处理完再取出
-	// 如果 channel 满了，说明达到并发上限，直接返回 429
-	semaphore    chan struct{}
+	semaphore     chan struct{}
 	maxConcurrent int
+
+	// 生命周期时间戳（Streamable HTTP 使用 TTL 过期机制）
+	CreatedAt  time.Time
+	LastUsedAt time.Time
 }
 
-// SessionManager 管理所有活跃的 SSE 会话
+// Touch 更新最后活跃时间（每次请求时调用）
+func (s *Session) Touch() {
+	s.LastUsedAt = time.Now()
+}
+
+// SessionManager 管理所有活跃会话
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	// 限流配置（所有新 session 共享）
-	limiterRPS    float64
-	limiterBurst  int
-	limitEnabled  bool
+	limiterRPS   float64
+	limiterBurst int
+	limitEnabled bool
 	// 并发控制配置
 	maxConcurrent int
 }
@@ -64,14 +73,21 @@ func (m *SessionManager) SetConcurrencyLimit(max int) {
 	m.maxConcurrent = max
 }
 
-// Create 创建一个新会话，绑定到指定网关
+// Create 创建一个新会话（自动生成 ID），绑定到指定网关
 func (m *SessionManager) Create(gatewayID uint, gatewayName string) *Session {
+	return m.CreateWithID(generateSessionID(), gatewayID, gatewayName)
+}
+
+// CreateWithID 使用指定 ID 创建会话（Streamable HTTP 通过 Mcp-Session-Id 创建）
+func (m *SessionManager) CreateWithID(sessionID string, gatewayID uint, gatewayName string) *Session {
 	s := &Session{
-		ID:          generateSessionID(),
+		ID:          sessionID,
 		GatewayID:   gatewayID,
 		GatewayName: gatewayName,
 		Response:    make(chan *mcp.RPCResponse, 16),
 		Done:        make(chan struct{}),
+		CreatedAt:   time.Now(),
+		LastUsedAt:  time.Now(),
 	}
 	if m.limitEnabled {
 		s.Limiter = rate.NewLimiter(rate.Limit(m.limiterRPS), m.limiterBurst)
@@ -87,10 +103,30 @@ func (m *SessionManager) Create(gatewayID uint, gatewayName string) *Session {
 	return s
 }
 
-// TryAcquire 尝试获取并发槽位，失败返回 false（调用方应返回 429）
+// GetOrCreate 查找已有 session，不存在则创建（Streamable HTTP 模式）
+// sessionID 来自 Mcp-Session-Id header；如果为空则创建新 session
+func (m *SessionManager) GetOrCreate(sessionID string, gatewayID uint, gatewayName string) *Session {
+	if sessionID != "" {
+		m.mu.RLock()
+		s, ok := m.sessions[sessionID]
+		m.mu.RUnlock()
+		if ok {
+			s.Touch()
+			return s
+		}
+	}
+	// 不存在或无 sessionID → 创建
+	id := sessionID
+	if id == "" {
+		id = uuid.New().String()
+	}
+	return m.CreateWithID(id, gatewayID, gatewayName)
+}
+
+// TryAcquire 尝试获取并发槽位，失败返回 false
 func (s *Session) TryAcquire() bool {
 	if s.semaphore == nil {
-		return true // 未启用并发控制，直接放行
+		return true
 	}
 	select {
 	case s.semaphore <- struct{}{}:
@@ -129,6 +165,29 @@ func (m *SessionManager) Remove(id string) {
 	if s, ok := m.sessions[id]; ok {
 		close(s.Done)
 		delete(m.sessions, id)
+	}
+}
+
+// CleanupExpired 后台 goroutine：每 60 秒扫描一次，删除超过 ttl 未活跃的 session
+// 通过 done channel 控制退出
+func (m *SessionManager) CleanupExpired(ttl time.Duration, done <-chan struct{}) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			m.mu.Lock()
+			for id, s := range m.sessions {
+				if now.Sub(s.LastUsedAt) > ttl {
+					close(s.Done)
+					delete(m.sessions, id)
+				}
+			}
+			m.mu.Unlock()
+		case <-done:
+			return
+		}
 	}
 }
 

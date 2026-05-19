@@ -143,9 +143,18 @@ func main() {
 		}
 
 		mcpHandler := handler.NewMcpHandler(sessionMgr, apiRepo, svc, logger)
+		// 旧版 SSE 传输（向后兼容）
 		mcpGroup.GET("/sse", mcpHandler.HandleSSE)
 		mcpGroup.POST("/message", mcpHandler.HandleMessage)
+
+		// 新版 Streamable HTTP 传输（MCP 2025 spec）
+		streamableHandler := handler.NewStreamableHandler(sessionMgr, apiRepo, svc, logger)
+		mcpGroup.POST("", streamableHandler.Handle) // POST /mcp
 	}
+
+	// 启动 session 过期清理（30 分钟未活跃则移除）
+	go sessionMgr.CleanupExpired(30*time.Minute, done)
+	logger.Info("会话过期清理已启动", zap.Duration("ttl", 30*time.Minute))
 
 	// ── 分组 3：管理 API（认证中间件）──
 	apiGroup := r.Group("/api", middleware.APIKeyAuth(middleware.AuthConfig{
