@@ -37,3 +37,20 @@ auth:
     - /static/
     - /metrics
     - /api/health
+
+# 后端服务注册（网关启动时自动导入为 MCP 工具）
+# 支持 OpenAPI (HTTP REST) 和 gRPC proto 两种方式
+# backends:
+#   - name: my-order-api
+#     gateway: Default Gateway       # 归属网关（默认 "Default Gateway"）
+#     openapi_url: https://example.com/openapi.json
+#     base_url: https://example.com/api
+#
+#   - name: my-grpc-service
+#     gateway: Default Gateway
+#     grpc_proto: |
+#       syntax = "proto3"; package orders;
+#       service OrderService { rpc GetOrder(GetOrderRequest) returns (Order); }
+#       message GetOrderRequest { string order_id = 1; }
+#       message Order { string order_id = 1; string customer = 2; }
+#     grpc_addr: localhost:50051

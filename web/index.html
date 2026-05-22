@@ -3,769 +3,641 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MCP Gateway 管理后台</title>
+<title>MCP Gateway</title>
 <style>
-  :root {
-    --bg: #f5f6fa; --card: #fff; --text: #2d3436; --muted: #636e72;
-    --border: #dfe6e9; --primary: #6c5ce7; --danger: #d63031;
-    --success: #00b894; --warning: #fdcb6e; --radius: 10px;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
-  .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+:root {
+  --bg: #f8f9fb; --surface: #fff; --text: #1a1d28; --muted: #687080;
+  --border: #e5e7ed; --accent: #4f46e5; --accent-light: #eef0ff;
+  --green: #10b97f; --green-bg: #ecfaf3; --red: #e54d4d; --red-bg: #fff0f0;
+  --amber: #f59e0b; --amber-bg: #fffbeb; --radius: 12px; --radius-sm: 8px;
+  --shadow: 0 1px 2px rgba(0,0,0,.04),0 1px 5px rgba(0,0,0,.06);
+  --font: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono: "SF Mono","Fira Code","JetBrains Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+button,input,select,textarea{font-family:inherit}
 
-  header { background: linear-gradient(135deg, #6c5ce7, #a29bfe); color: #fff; padding: 28px 0; margin-bottom: 28px; }
-  header .container { display: flex; justify-content: space-between; align-items: center; }
-  header h1 { font-size: 1.5rem; font-weight: 700; }
-  header .badge { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; }
+/* Layout */
+.layout{display:flex;min-height:100vh}
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);padding:20px 0;display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+.sidebar-logo{padding:0 20px 24px;font-size:1.1rem;font-weight:700;color:var(--accent);letter-spacing:-.3px}
+.sidebar-logo span{color:var(--muted);font-weight:400;font-size:.78rem;display:block;margin-top:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--muted);font-size:.86rem;cursor:pointer;transition:all .15s;border:none;background:none;width:100%;text-align:left;border-left:3px solid transparent}
+.nav-item:hover{color:var(--text);background:#f5f6fa}
+.nav-item.active{color:var(--accent);background:var(--accent-light);border-left-color:var(--accent);font-weight:600}
+.nav-item .icon{font-size:1.1rem;width:20px;text-align:center;flex-shrink:0}
+.nav-badge{font-size:.7rem;background:var(--accent-light);color:var(--accent);padding:1px 7px;border-radius:10px;margin-left:auto}
+.main{flex:1;margin-left:220px;padding:32px 36px;max-width:1100px}
+.page{display:none}
+.page.active{display:block}
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
-  .stat-card { background: var(--card); border-radius: var(--radius); padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  .stat-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .stat-card .value { font-size: 2rem; font-weight: 700; color: var(--primary); margin-top: 4px; }
-  .stat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-  .stat-dot.on { background: var(--success); }
-  .stat-dot.off { background: var(--danger); }
+/* Header */
+.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.page-header h2{font-size:1.25rem;font-weight:700;letter-spacing:-.2px}
+.page-header .sub{font-size:.82rem;color:var(--muted);margin-top:2px}
 
-  .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
-  .tab { padding: 10px 24px; border: none; background: var(--card); border-radius: var(--radius) var(--radius) 0 0; cursor: pointer; font-size: 0.9rem; color: var(--muted); transition: all 0.15s; }
-  .tab:hover { color: var(--text); }
-  .tab.active { background: var(--card); color: var(--primary); font-weight: 600; box-shadow: 0 -2px 0 var(--primary); }
+/* Cards */
+.card{background:var(--surface);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);margin-bottom:20px}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.card-header h3{font-size:.95rem;font-weight:600}
 
-  .panel { display: none; background: var(--card); border-radius: 0 var(--radius) var(--radius) var(--radius); padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-  .panel.active { display: block; }
+/* Stats grid */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
+.stat .label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;font-weight:500;margin-bottom:6px}
+.stat .value{font-size:1.8rem;font-weight:700;color:var(--text)}
+.stat .value.accent{color:var(--accent)}
+.stat .foot{font-size:.76rem;color:var(--muted);margin-top:4px}
 
-  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  th { font-weight: 600; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #f8f9ff; }
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius-sm);font-size:.84rem;font-weight:500;cursor:pointer;transition:all .15s;border:1px solid transparent;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.08)}
+.btn-secondary{background:var(--surface);color:var(--text);border-color:var(--border)}
+.btn-secondary:hover{background:#f5f6fa}
+.btn-danger{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.btn-danger:hover{background:var(--red);color:#fff}
+.btn-sm{padding:5px 10px;font-size:.78rem}
+.btn-xs{padding:3px 8px;font-size:.72rem;border-radius:6px}
+.btn:disabled{opacity:.45;pointer-events:none}
 
-  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-  .tag-get { background: #dfe6fd; color: #3867d6; }
-  .tag-post { background: #d5f5e3; color: #1e824c; }
-  .tag-mcp { background: #eee; color: #636e72; }
-  .tag-web { background: #ffe6e0; color: #e17055; }
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:.84rem}
+th{text-align:left;padding:10px 14px;font-weight:600;color:var(--muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.2px;border-bottom:2px solid var(--border)}
+td{padding:10px 14px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfd}
+.disabled-row td{color:#c0c4cc}
+.disabled-row .tag{opacity:.5}
 
-  .btn { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
-  .btn-primary { background: var(--primary); color: #fff; }
-  .btn-primary:hover { opacity: 0.9; }
-  .btn-danger { background: none; color: var(--danger); border: 1px solid var(--danger); }
-  .btn-danger:hover { background: var(--danger); color: #fff; }
-  .btn-sm { padding: 4px 12px; font-size: 0.76rem; }
-  .btn-xs { padding: 2px 8px; font-size: 0.72rem; border-radius: 4px; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Tags */
+.tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:.73rem;font-weight:600;letter-spacing:.1px}
+.tag-get{background:#e0e7ff;color:#4f46e5}
+.tag-post{background:var(--green-bg);color:var(--green)}
+.tag-grpc{background:#f0e6ff;color:#7c3aed}
+.tag-success{background:var(--green-bg);color:var(--green)}
+.tag-error{background:var(--red-bg);color:var(--red)}
+.tag-muted{background:#f3f4f6;color:var(--muted)}
 
-  .form-group { margin-bottom: 16px; }
-  label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: var(--muted); }
-  input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s; background: #fafbfc; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: #fff; }
-  textarea { font-family: "SF Mono", "Fira Code", monospace; font-size: 0.82rem; resize: vertical; }
-  input[type="file"] { padding: 8px; }
+/* Toggle */
+.toggle{position:relative;display:inline-block;width:40px;height:22px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;cursor:pointer;inset:0;background:#d1d5db;border-radius:22px;transition:.2s}
+.toggle .slider:before{content:"";position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:var(--green)}
+.toggle input:checked+.slider:before{transform:translateX(18px)}
 
-  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .form-actions { display: flex; gap: 10px; margin-top: 20px; }
+/* Forms */
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:.82rem;font-weight:600;color:var(--muted);margin-bottom:5px}
+.form-group .hint{font-size:.74rem;color:var(--muted);margin-top:4px}
+input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.86rem;transition:border-color .15s;background:var(--bg)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+textarea{font-family:var(--mono);font-size:.8rem;resize:vertical}
+input[type="checkbox"]{width:auto}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-actions{display:flex;gap:8px;margin-top:20px}
 
-  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
-  .alert { padding: 10px 14px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 16px; }
-  .alert-warn { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
-  .alert-success { background: #d5f5e3; color: #1e824c; border: 1px solid var(--success); }
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s}
+.modal{background:var(--surface);border-radius:var(--radius);padding:28px;width:90%;max-width:560px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15);animation:scaleIn .15s}
+.modal h3{font-size:1.05rem;margin-bottom:20px}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes scaleIn{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
 
-  /* Toggle switch */
-  .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .toggle .slider { position: absolute; cursor: pointer; inset: 0; background: #ccc; border-radius: 24px; transition: 0.2s; }
-  .toggle .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
-  .toggle input:checked + .slider { background: var(--success); }
-  .toggle input:checked + .slider:before { transform: translateX(20px); }
+/* Select gateway bar */
+.gateway-bar{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:12px 16px;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow)}
+.gateway-bar select{width:auto;min-width:200px;background:var(--surface)}
+.gateway-bar .gw-badge{font-size:.78rem;padding:3px 10px;border-radius:12px;font-weight:500}
+.gateway-bar .gw-badge.public{background:var(--green-bg);color:var(--green)}
+.gateway-bar .gw-badge.protected{background:var(--amber-bg);color:var(--amber)}
 
-  /* Import drop zone */
-  .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 30px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafbfc; }
-  .drop-zone:hover { border-color: var(--primary); background: #f8f7ff; }
-  .drop-zone.dragover { border-color: var(--primary); background: #f0eeff; }
+/* Empty state */
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty .icon{font-size:2.5rem;margin-bottom:10px;opacity:.6}
+.empty p{font-size:.88rem;margin-bottom:12px}
 
-  .result-box { background: #2d3436; color: #dfe6e9; padding: 16px; border-radius: 8px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.82rem; white-space: pre-wrap; max-height: 500px; overflow-y: auto; margin-top: 12px; }
-  .result-box.error { color: #ff7675; }
-  .empty-state { text-align: center; padding: 40px; color: var(--muted); }
-  .empty-state .icon { font-size: 2.5rem; margin-bottom: 8px; }
+/* Result box */
+.result-box{background:#1e2939;color:#e2e8f0;padding:16px;border-radius:var(--radius-sm);font-family:var(--mono);font-size:.8rem;white-space:pre-wrap;max-height:400px;overflow-y:auto;line-height:1.5}
+.result-box.error{color:#fca5a5}
 
-  .disabled-row td { color: #bbb; }
-  .disabled-row .tag { opacity: 0.5; }
+/* Import preview */
+.preview-list{max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.preview-item{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.preview-item:hover{background:#fafbfd}
+.preview-item:last-child{border-bottom:none}
+.preview-item input[type="checkbox"]{margin-top:2px;width:auto}
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+/* Toast */
+.toast-wrap{position:fixed;top:20px;right:20px;z-index:300;display:flex;flex-direction:column;gap:8px}
+.toast{padding:12px 20px;border-radius:var(--radius-sm);color:#fff;font-size:.84rem;box-shadow:0 4px 16px rgba(0,0,0,.15);animation:slideIn .2s}
+.toast-success{background:var(--green)}
+.toast-error{background:var(--red)}
+.toast-warn{background:var(--amber);color:#1a1d28}
+@keyframes slideIn{from{transform:translateX(60px);opacity:0}to{transform:translateX(0);opacity:1}}
 
-  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
-  .toast { padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 0.85rem; animation: slideIn 0.2s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-  .toast-success { background: var(--success); }
-  .toast-error { background: var(--danger); }
-  .toast-warn { background: var(--warning); color: #2d3436; }
-  @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-  @media (max-width: 640px) {
-    .form-row { grid-template-columns: 1fr; }
-    .stats { grid-template-columns: 1fr 1fr; }
-  }
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main{margin-left:0}
+  .stats{grid-template-columns:1fr 1fr}
+  .form-row{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="container">
-    <div>
-      <h1>MCP Gateway 管理后台</h1>
-      <span style="opacity:0.8;font-size:0.85rem;">AI Model Context Protocol 网关</span>
-    </div>
-    <span class="badge">v2.0.0</span>
-  </div>
-</header>
+<div class="layout">
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">MCP Gateway<span>管理控制台</span></div>
+  <button class="nav-item active" data-page="page-overview"><span class="icon">◈</span>概览</button>
+  <button class="nav-item" data-page="page-gateways"><span class="icon">◎</span>网关管理</button>
+  <button class="nav-item" data-page="page-tools"><span class="icon">⚙</span>工具管理<span class="nav-badge" id="nav-tool-count">0</span></button>
+  <button class="nav-item" data-page="page-import"><span class="icon">↓</span>导入工具</button>
+  <button class="nav-item" data-page="page-test"><span class="icon">▶</span>工具测试</button>
+  <button class="nav-item" data-page="page-logs"><span class="icon">☰</span>调用历史</button>
+  <button class="nav-item" data-page="page-sessions"><span class="icon">⇄</span>活跃会话</button>
+</aside>
 
-<div class="container">
-  <!-- 网关选择器 -->
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-    <span style="font-weight:600;color:var(--muted);font-size:0.85rem;">当前网关:</span>
-    <select id="gateway-select" onchange="onGatewayChange()" style="width:auto;min-width:200px;">
-      <option value="">加载中...</option>
-    </select>
-    <button class="btn btn-sm btn-primary" onclick="showGatewayForm()" style="font-size:0.78rem;">+ 新建网关</button>
-    <span id="gateway-auth-badge" style="font-size:0.78rem;"></span>
-  </div>
+<!-- Main Content -->
+<main class="main">
 
-  <!-- 新建网关表单 -->
-  <div id="gateway-form" style="display:none;background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:16px;border:1px solid #e8e8ff;">
-    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
-      <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
-        <label>网关名称 *</label>
-        <input id="gw-name" placeholder="如: 订单服务网关" />
-      </div>
-      <div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;">
-        <label>描述</label>
-        <input id="gw-desc" placeholder="网关用途说明" />
-      </div>
-      <div class="form-group" style="margin-bottom:0;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="checkbox" id="gw-auth" style="width:auto;" /> 需要 API Key
-        </label>
-      </div>
-      <button class="btn btn-primary" onclick="createGateway()">确认创建</button>
-      <button class="btn" style="background:#eee;" onclick="document.getElementById('gateway-form').style.display='none'">取消</button>
-    </div>
-  </div>
-
-  <!-- 统计卡片 -->
+<!-- ====== Page: Overview ====== -->
+<section id="page-overview" class="page active">
+  <div class="page-header"><div><h2>概览</h2><div class="sub">网关运行状态一览</div></div></div>
   <div class="stats">
-    <div class="stat-card">
-      <div class="label">已注册工具</div>
-      <div class="value" id="stat-tools">-</div>
+    <div class="stat"><div class="label">已注册工具</div><div class="value accent" id="ov-tools">-</div><div class="foot">跨所有网关</div></div>
+    <div class="stat"><div class="label">活跃会话</div><div class="value" id="ov-sessions">-</div><div class="foot">SSE + Streamable</div></div>
+    <div class="stat"><div class="label">今日调用</div><div class="value" id="ov-calls">-</div><div class="foot">来自所有来源</div></div>
+    <div class="stat"><div class="label">后端状态</div><div class="value" style="font-size:1.1rem" id="ov-backend"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#d1d5db;margin-right:6px"></span>检测中</div></div>
+  </div>
+  <div class="card" id="onboarding" style="display:none;background:linear-gradient(135deg,#eef0ff,#f8f9ff);border:1px solid #d5d8ff">
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="font-size:2.5rem;margin-bottom:8px">👋</div>
+      <h3 style="font-size:1.1rem">欢迎使用 MCP Gateway</h3>
+      <p style="color:var(--muted);font-size:.85rem;margin-top:4px">选择一种方式，将你的后端服务注册为 AI 可调用的工具</p>
     </div>
-    <div class="stat-card">
-      <div class="label">今日调用次数</div>
-      <div class="value" id="stat-calls">-</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">活跃 SSE 会话</div>
-      <div class="value" id="stat-sessions">-</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">模拟后端</div>
-      <div class="value" style="font-size:1.2rem;" id="stat-backend">
-        <span class="stat-dot off"></span>检测中…
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:18px;text-align:center;cursor:pointer" onclick="navTo('page-import')">
+        <div style="font-size:2rem;margin-bottom:6px">📄</div>
+        <div style="font-weight:600;font-size:.88rem">OpenAPI 导入</div>
+        <div style="font-size:.76rem;color:var(--muted);margin-top:4px">有 Swagger/OpenAPI 文档<br>粘贴 URL 一键导入</div>
+      </div>
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:18px;text-align:center;cursor:pointer" onclick="navTo('page-import');document.getElementById('grpc-proto').focus()">
+        <div style="font-size:2rem;margin-bottom:6px">⚡</div>
+        <div style="font-weight:600;font-size:.88rem">gRPC Proto 导入</div>
+        <div style="font-size:.76rem;color:var(--muted);margin-top:4px">粘贴 .proto 文件<br>输入 gRPC 地址</div>
+      </div>
+      <div style="background:var(--surface);border-radius:var(--radius-sm);padding:18px;text-align:center;cursor:pointer" onclick="navTo('page-tools');showToolModal()">
+        <div style="font-size:2rem;margin-bottom:6px">✏️</div>
+        <div style="font-weight:600;font-size:.88rem">手动创建</div>
+        <div style="font-size:.76rem;color:var(--muted);margin-top:4px">逐个填写工具<br>名称、地址、参数</div>
       </div>
     </div>
   </div>
 
-  <!-- 标签页 -->
-  <div class="tabs">
-    <button class="tab active" data-panel="panel-tools">工具管理</button>
-    <button class="tab" data-panel="panel-tester">🧪 测试</button>
-    <button class="tab" data-panel="panel-logs">📋 调用历史</button>
-    <button class="tab" data-panel="panel-sessions">🔌 会话</button>
-  </div>
-
-  <!-- ====== 面板1: 工具管理 ====== -->
-  <div id="panel-tools" class="panel active">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 style="font-size:1.1rem;">已注册工具</h2>
-      <div>
-        <button class="btn btn-primary" onclick="showCreateForm()">+ 新建工具</button>
-        <button class="btn btn-primary" style="background:#00b894;margin-left:8px;" onclick="showImportForm()">📥 从 OpenAPI 导入</button>
-      </div>
-    </div>
-
-    <!-- 导入表单 -->
-    <div id="import-form" style="display:none;background:#f0faf6;padding:20px;border-radius:8px;margin-bottom:20px;border:1px solid #c8f0e0;">
-      <h3 style="margin-bottom:12px;font-size:1rem;">从 OpenAPI / Swagger 文档导入工具</h3>
-      <div class="form-group">
-        <label>文档 URL（远程抓取）</label>
-        <input id="import-url" placeholder="如: https://petstore.swagger.io/v2/swagger.json" />
-        <div class="hint">填写 URL 后自动抓取。可测试: http://localhost:9090/openapi.json (OpenAPI 3.0) 或 /swagger.json (Swagger 2.0)</div>
-      </div>
-      <div class="form-group">
-        <label>或直接粘贴文档内容（YAML / JSON）</label>
-        <textarea id="import-spec" rows="5" placeholder='openapi: "3.0.0"&#10;info:&#10;  title: My API&#10;paths: ...'></textarea>
-      </div>
-      <div class="form-group">
-        <label>Base URL（可选，留空自动检测）</label>
-        <input id="import-baseurl" placeholder="如: http://localhost:9090" />
-        <div class="hint">留空时自动从文档 servers/host 字段检测</div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="previewImport()" id="btn-preview">🔍 预览工具列表</button>
-        <button class="btn" style="background:#eee;" onclick="hideImportForm()">取消</button>
-      </div>
-
-      <!-- 预览结果：带复选框的工具列表 -->
-      <div id="import-preview" style="display:none;margin-top:16px;"></div>
-    </div>
-
-    <!-- 新建表单 -->
-    <div id="create-form" style="display:none;background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:20px;border:1px solid #e8e8ff;">
-      <h3 style="margin-bottom:16px;font-size:1rem;">新建工具配置</h3>
-      <div class="form-row">
-        <div class="form-group">
-          <label>工具名称 *</label>
-          <input id="new-name" placeholder="如: get_order_detail" />
-        </div>
-        <div class="form-group">
-          <label>HTTP 方法 *</label>
-          <select id="new-method"><option>GET</option><option>POST</option></select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>描述 *</label>
-        <input id="new-desc" placeholder="如: 根据订单 ID 查询订单详情" />
-      </div>
-      <div class="form-group">
-        <label>后端地址 *</label>
-        <input id="new-url" placeholder="如: http://localhost:9090/api/orders/{id}" />
-        <div class="hint">支持 {param} 路径占位符</div>
-      </div>
-      <div class="form-group">
-        <label>Input Schema (JSON, 可选)</label>
-        <textarea id="new-schema" rows="4" placeholder='{"id":{"type":"string","description":"订单ID"}}'></textarea>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="createTool()">确认创建</button>
-        <button class="btn" style="background:#eee;" onclick="hideCreateForm()">取消</button>
-      </div>
-    </div>
-
-    <table>
-      <thead><tr><th>ID</th><th>工具名</th><th>描述</th><th>方法</th><th>后端地址</th><th style="width:70px;">启用</th><th>操作</th></tr></thead>
-      <tbody id="tools-tbody"></tbody>
-    </table>
-    <div id="tools-empty" class="empty-state" style="display:none;">
-      <div class="icon">📦</div><p>还没有注册任何工具</p>
-      <button class="btn btn-primary" style="margin-top:12px;" onclick="showCreateForm()">创建第一个</button>
+  <div class="card" id="quick-actions">
+    <div class="card-header"><h3>快速操作</h3></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="navTo('page-tools');showToolModal()">+ 新建工具</button>
+      <button class="btn btn-secondary" onclick="navTo('page-import')">↓ 导入工具 (OpenAPI / gRPC)</button>
+      <button class="btn btn-secondary" onclick="navTo('page-test')">▶ 测试工具调用</button>
     </div>
   </div>
+</section>
 
-  <!-- ====== 面板2: 工具测试 ====== -->
-  <div id="panel-tester" class="panel">
-    <h2 style="font-size:1.1rem;margin-bottom:16px;">手动工具测试</h2>
-    <div id="backend-warn" class="alert alert-warn" style="display:none;">
-      ⚠ 模拟后端不可达。请先启动: <code style="background:#ffeeba;padding:2px 6px;border-radius:3px;">go run cmd/mock-backend/main.go</code>
+<!-- ====== Page: Gateways ====== -->
+<section id="page-gateways" class="page">
+  <div class="page-header"><div><h2>网关管理</h2><div class="sub">多租户网关配置</div></div><button class="btn btn-primary" onclick="showGatewayModal()">+ 新建网关</button></div>
+  <div class="card"><table>
+    <thead><tr><th>名称</th><th>描述</th><th>认证</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="gw-tbody"></tbody>
+  </table></div>
+</section>
+
+<!-- ====== Page: Tools ====== -->
+<section id="page-tools" class="page">
+  <div class="gateway-bar">
+    <span style="font-size:.82rem;color:var(--muted);font-weight:500">当前网关</span>
+    <select id="gw-select-tools" onchange="onGwChange('tools')"></select>
+    <span class="gw-badge public" id="gw-badge-tools">公共</span>
+  </div>
+  <div class="page-header"><div><h2>工具管理</h2><div class="sub" id="tools-sub">管理当前网关下的 API 工具</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="showToolModal()">+ 新建工具</button>
     </div>
+  </div>
+  <div class="card"><table>
+    <thead><tr><th>名称</th><th>描述</th><th>协议</th><th>方法/路径</th><th>后端</th><th style="width:60px">启用</th><th style="width:60px"></th></tr></thead>
+    <tbody id="tools-tbody"></tbody>
+  </table><div id="tools-empty" class="empty" style="display:none"><div class="icon">⚙</div><p>还没有注册任何工具</p><button class="btn btn-primary" onclick="showToolModal()">创建第一个</button></div></div>
+</section>
+
+<!-- ====== Page: Import ====== -->
+<section id="page-import" class="page">
+  <div class="gateway-bar">
+    <span style="font-size:.82rem;color:var(--muted);font-weight:500">目标网关</span>
+    <select id="gw-select-import" onchange="onGwChange('import')"></select>
+    <span class="gw-badge public" id="gw-badge-import">公共</span>
+  </div>
+  <div class="page-header"><div><h2>导入工具</h2><div class="sub">从 OpenAPI / Swagger / gRPC proto 文件导入</div></div></div>
+  <div class="card">
+    <div class="card-header"><h3>HTTP API — OpenAPI / Swagger</h3></div>
+    <div class="form-group"><label>文档 URL</label><input id="import-url" placeholder="https://petstore.swagger.io/v2/swagger.json" /><div class="hint">可测试: http://localhost:9090/openapi.json 或 /swagger.json</div></div>
+    <div class="form-group"><label>或粘贴文档内容 (YAML / JSON)</label><textarea id="import-spec" rows="4" placeholder='openapi: "3.0.0" ...'></textarea></div>
+    <div class="form-group"><label>Base URL (可选)</label><input id="import-baseurl" placeholder="留空自动检测" /></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="previewImport()">🔍 预览</button></div>
+    <div id="import-preview" style="margin-top:16px;display:none"></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3>gRPC — .proto 文件</h3></div>
+    <div class="form-group"><label>.proto 文件内容</label><textarea id="grpc-proto" rows="6" placeholder='syntax = "proto3";&#10;package orders;&#10;service OrderService { rpc GetOrder(GetOrderRequest) returns (Order); }&#10;message GetOrderRequest { string order_id = 1; }&#10;message Order { string order_id = 1; string customer = 2; }'></textarea></div>
+    <div class="form-group"><label>gRPC 服务地址</label><input id="grpc-addr" placeholder="localhost:50051" /></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="importGrpc()">导入 gRPC 工具</button></div>
+  </div>
+</section>
+
+<!-- ====== Page: Test ====== -->
+<section id="page-test" class="page">
+  <div class="gateway-bar">
+    <span style="font-size:.82rem;color:var(--muted);font-weight:500">当前网关</span>
+    <select id="gw-select-test" onchange="onGwChange('test')"></select>
+    <span class="gw-badge public" id="gw-badge-test">公共</span>
+  </div>
+  <div class="page-header"><div><h2>工具测试</h2><div class="sub">手动调用工具查看结果</div></div></div>
+  <div id="test-backend-warn" class="card" style="background:var(--amber-bg);color:#92400e;border:1px solid var(--amber);display:none">
+    ⚠ 模拟后端不可达。请先启动: <code style="background:#fef3c7;padding:2px 6px;border-radius:4px">go run cmd/mock-backend/main.go</code>
+  </div>
+  <div class="card">
     <div class="form-row">
-      <div class="form-group">
-        <label>选择工具</label>
-        <select id="test-tool"><option value="">-- 选择工具 --</option></select>
-      </div>
-      <div class="form-group">
-        <label>方法</label>
-        <input id="test-method" readonly style="background:#eee;cursor:not-allowed;" />
-      </div>
+      <div class="form-group"><label>选择工具</label><select id="test-tool"><option value="">-- 选择 --</option></select></div>
+      <div class="form-group"><label>方法 / 路径</label><input id="test-method" readonly style="background:var(--bg)" /></div>
     </div>
-    <div class="form-group">
-      <label>目标地址</label>
-      <input id="test-url" readonly style="background:#eee;cursor:not-allowed;font-family:monospace;font-size:0.82rem;" />
-    </div>
-    <div class="form-group">
-      <label>参数 JSON</label>
-      <textarea id="test-args" rows="5" placeholder='{"customer":"CUST-101"}'></textarea>
-    </div>
-    <button class="btn btn-primary" id="btn-test" onclick="testTool()">发送测试请求</button>
-    <div id="test-result" class="result-box" style="display:none;"></div>
+    <div class="form-group"><label>后端地址</label><input id="test-url" readonly style="background:var(--bg);font-family:var(--mono);font-size:.8rem" /></div>
+    <div class="form-group"><label>参数 (JSON)</label><textarea id="test-args" rows="4" placeholder='{"order_id":"ORD-001"}'></textarea></div>
+    <button class="btn btn-primary" id="btn-test" onclick="testTool()">▶ 发送测试请求</button>
+    <div id="test-result" class="result-box" style="display:none;margin-top:14px"></div>
   </div>
+</section>
 
-  <!-- ====== 面板4: 调用历史 ====== -->
-  <div id="panel-logs" class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 style="font-size:1.1rem;">调用历史</h2>
-      <button class="btn btn-primary" onclick="refreshLogs()">刷新</button>
-    </div>
-    <table>
-      <thead><tr><th>时间</th><th>工具名</th><th>来源</th><th>状态</th><th>耗时</th><th>参数</th></tr></thead>
-      <tbody id="logs-tbody"></tbody>
-    </table>
-    <div id="logs-empty" class="empty-state" style="display:none;">
-      <div class="icon">📋</div><p>暂无调用记录</p>
-    </div>
-  </div>
+<!-- ====== Page: Logs ====== -->
+<section id="page-logs" class="page">
+  <div class="page-header"><div><h2>调用历史</h2><div class="sub">最近的工具调用记录</div></div><button class="btn btn-secondary" onclick="refreshLogs()">刷新</button></div>
+  <div class="card"><table>
+    <thead><tr><th>时间</th><th>工具</th><th>来源</th><th>状态</th><th>耗时</th><th>参数</th></tr></thead>
+    <tbody id="logs-tbody"></tbody>
+  </table><div id="logs-empty" class="empty" style="display:none"><div class="icon">☰</div><p>暂无调用记录</p></div></div>
+</section>
 
-  <!-- ====== 面板5: SSE 会话 ====== -->
-  <div id="panel-sessions" class="panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h2 style="font-size:1.1rem;">活跃 SSE 连接</h2>
-      <button class="btn btn-primary" onclick="refreshSessions()">刷新</button>
-    </div>
-    <table>
-      <thead><tr><th>会话 ID</th></tr></thead>
-      <tbody id="sessions-tbody"></tbody>
-    </table>
-    <div id="sessions-empty" class="empty-state" style="display:none;">
-      <div class="icon">🔌</div><p>当前没有活跃的 SSE 连接</p>
-    </div>
-  </div>
+<!-- ====== Page: Sessions ====== -->
+<section id="page-sessions" class="page">
+  <div class="page-header"><div><h2>活跃会话</h2><div class="sub">当前连接的客户端</div></div><button class="btn btn-secondary" onclick="refreshSessions()">刷新</button></div>
+  <div class="card"><table>
+    <thead><tr><th>会话 ID</th><th>网关</th></tr></thead>
+    <tbody id="sessions-tbody"></tbody>
+  </table><div id="sessions-empty" class="empty" style="display:none"><div class="icon">⇄</div><p>暂无活跃会话</p></div></div>
+</section>
+
+</main>
 </div>
 
-<div class="toast-container" id="toasts"></div>
+<!-- Modal overlay -->
+<div id="modal-overlay" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
 
 <script>
-// ====== 初始化 ======
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById(tab.dataset.panel).classList.add('active');
-    });
-  });
+// ====== State ======
+let gateways = [], currentGw = 0, importPreview = null;
 
-  // 文件拖拽
-  const dropZone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('import-file');
-  dropZone.addEventListener('click', () => fileInput.click());
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault(); dropZone.classList.remove('dragover');
-    if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; }
-  });
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files.length) {
-      dropZone.querySelector('p:first-child').textContent = '📄 ' + fileInput.files[0].name;
-    }
-  });
-
+// ====== Init ======
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',()=>navTo(btn.dataset.page)));
+  document.getElementById('test-tool').addEventListener('change',onTestToolChange);
   refreshAll();
-  checkBackend();
-  setInterval(refreshSessions, 5000);
-  setInterval(checkBackend, 15000);
+  setInterval(refreshSessions,8000);
+  setInterval(checkBackend,20000);
 });
 
-// ====== API ======
-async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+// ====== Navigation ======
+function navTo(pageId){
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelector(`[data-page="${pageId}"]`)?.classList.add('active');
+  document.getElementById(pageId)?.classList.add('active');
+  if(pageId==='page-logs') refreshLogs();
+  if(pageId==='page-sessions') refreshSessions();
+}
+
+// ====== Gateway selector sync ======
+function syncGwSelectors(){
+  ['tools','import','test'].forEach(section=>{
+    const sel=document.getElementById('gw-select-'+section);
+    if(!sel)return;
+    sel.innerHTML=gateways.map(g=>`<option value="${g.ID}" data-auth="${g.api_key_required}">${esc(g.Name)}${g.api_key_required?' 🔒':''}</option>`).join('');
+    sel.value=currentGw;
+    updateGwBadge(section);
+  });
+}
+function onGwChange(section){
+  currentGw=parseInt(document.getElementById('gw-select-'+section).value)||0;
+  updateGwBadge(section);
+  if(section==='tools')refreshTools();
+  if(section==='test')refreshTools(); // also refresh test dropdown
+}
+function updateGwBadge(section){
+  const sel=document.getElementById('gw-select-'+section); if(!sel)return;
+  const opt=sel.selectedOptions[0]; if(!opt)return;
+  const badge=document.getElementById('gw-badge-'+section); if(!badge)return;
+  const auth=opt.dataset.auth==='true';
+  badge.textContent=auth?'🔒 需要 Key':'🌐 公共';
+  badge.className='gw-badge '+(auth?'protected':'public');
+}
+
+// ====== API helper ======
+async function api(path,opts={}){
+  const res=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});
+  const data=await res.json();
+  if(!res.ok)throw new Error(data.error||res.statusText);
   return data;
 }
 
-// ====== 后端健康检测 ======
-async function checkBackend() {
-  const dot = document.querySelector('#stat-backend .stat-dot');
-  const text = document.getElementById('stat-backend');
-  const warn = document.getElementById('backend-warn');
-  const btn = document.getElementById('btn-test');
-  if (!dot || !text) return; // 元素不存在时跳过
-  try {
-    const res = await fetch('/api/health');
-    const data = await res.json();
-    if (data.backend === 'online') {
-      dot.className = 'stat-dot on';
-      text.innerHTML = '<span class="stat-dot on"></span>运行中';
-      if (warn) warn.style.display = 'none';
-      if (btn) btn.disabled = false;
-      return;
-    }
-  } catch(e) {}
-  dot.className = 'stat-dot off';
-  text.innerHTML = '<span class="stat-dot off"></span>未启动';
-  if (warn) warn.style.display = 'block';
-  if (btn) btn.disabled = true;
+// ====== Refresh all ======
+async function refreshAll(){
+  try{gateways=(await api('/api/gateways')).gateways||[]}catch(e){}
+  currentGw=gateways.length>0?gateways[0].ID:0;
+  syncGwSelectors();
+  await Promise.all([refreshTools(),refreshSessions(),refreshLogs(),checkBackend()]);
 }
 
-// ====== 网关管理 ======
-let currentGatewayID = 0;
-
-async function loadGateways() {
-  try {
-    const data = await api('/api/gateways');
-    const sel = document.getElementById('gateway-select');
-    sel.innerHTML = data.gateways.map(g =>
-      `<option value="${g.ID}" data-auth="${g.api_key_required}" data-name="${esc(g.Name)}">${esc(g.Name)}${g.api_key_required?' 🔒':''}</option>`
-    ).join('');
-    if (data.gateways.length > 0) {
-      currentGatewayID = data.gateways[0].ID;
-      sel.value = currentGatewayID;
-      updateGatewayBadge(data.gateways[0]);
-    }
-  } catch(e) {}
+// ====== Tools ======
+function showOnboarding(show){
+  var ob=document.getElementById('onboarding'),qa=document.getElementById('quick-actions');
+  if(ob){ob.style.display=show?'block':'none'}
+  if(qa){qa.style.display=show?'none':'block'}
 }
+async function refreshTools(){
+  try{
+    const tools=await api('/api/tools?gateway_id='+currentGw);
+    const tbody=document.getElementById('tools-tbody'),empty=document.getElementById('tools-empty');
+    document.getElementById('ov-tools').textContent=tools.length;
+    document.getElementById('nav-tool-count').textContent=tools.length;
+    const testSel=document.getElementById('test-tool');
+    testSel.innerHTML='<option value="">-- 选择 --</option>';
 
-function onGatewayChange() {
-  currentGatewayID = parseInt(document.getElementById('gateway-select').value) || 0;
-  const opt = document.getElementById('gateway-select').selectedOptions[0];
-  updateGatewayBadge({api_key_required: opt?.dataset.auth === 'true', Name: opt?.dataset.name || ''});
-  refreshTools();
-  refreshLogs();
-}
+    if(!tools.length){tbody.innerHTML='';empty.style.display='block';showOnboarding(true);return}
+      showOnboarding(false)
+    empty.style.display='none';
 
-function updateGatewayBadge(gw) {
-  document.getElementById('gateway-auth-badge').innerHTML = gw.api_key_required ? '🔒 需要 API Key' : '🌐 公共网关';
-}
-
-function showGatewayForm() { document.getElementById('gateway-form').style.display = 'block'; }
-
-async function createGateway() {
-  const name = document.getElementById('gw-name').value.trim();
-  if (!name) { toast('请填写网关名称', 'warn'); return; }
-  try {
-    await api('/api/gateways', { method: 'POST',
-      body: JSON.stringify({name, description: document.getElementById('gw-desc').value.trim(),
-        api_key_required: document.getElementById('gw-auth').checked})
-    });
-    toast('网关创建成功', 'success');
-    document.getElementById('gateway-form').style.display = 'none';
-    document.getElementById('gw-name').value = document.getElementById('gw-desc').value = '';
-    document.getElementById('gw-auth').checked = false;
-    await loadGateways();
-  } catch(e) { toast('创建失败: '+e.message, 'error'); }
-}
-
-// ====== 刷新全部 ======
-async function refreshAll() {
-  await loadGateways();
-  await Promise.all([refreshTools(), refreshSessions(), refreshLogs()]);
-}
-
-// ====== 工具列表 ======
-async function refreshTools() {
-  try {
-    const tools = await api('/api/tools?gateway_id=' + currentGatewayID);
-    const tbody = document.getElementById('tools-tbody');
-    const empty = document.getElementById('tools-empty');
-    const testerSelect = document.getElementById('test-tool');
-
-    document.getElementById('stat-tools').textContent = tools.length;
-    testerSelect.innerHTML = '<option value="">-- 选择工具 --</option>';
-
-    if (tools.length === 0) {
-      tbody.innerHTML = ''; empty.style.display = 'block'; return;
-    }
-    empty.style.display = 'none';
-
-    tbody.innerHTML = tools.map(t => `
-      <tr class="${t.enabled ? '' : 'disabled-row'}">
-        <td>${t.ID}</td>
+    tbody.innerHTML=tools.map(t=>{
+      let methodTag,protocol='';
+      if(t.protocol==='grpc'){
+        methodTag=`<span class="tag tag-grpc">gRPC</span>`;
+        protocol=`<span style="font-family:var(--mono);font-size:.76rem;color:var(--muted)">${esc(t.http_method)}</span>`;
+      }else{
+        methodTag=`<span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span>`;
+      }
+      return`<tr class="${t.enabled?'':'disabled-row'}">
         <td><strong>${esc(t.tool_name)}</strong></td>
-        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.description)}">${esc(t.description)}</td>
-        <td><span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span></td>
-        <td style="font-family:monospace;font-size:0.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(t.backend_url)}">${esc(t.backend_url)}</td>
-        <td>
-          <label class="toggle">
-            <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleTool(${t.ID}, this.checked)" />
-            <span class="slider"></span>
-          </label>
-        </td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.description)}">${esc(t.description)}</td>
+        <td>${methodTag}</td>
+        <td>${protocol||methodTag}</td>
+        <td style="font-family:var(--mono);font-size:.76rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(t.backend_url)}">${esc(t.backend_url)}</td>
+        <td><label class="toggle"><input type="checkbox" ${t.enabled?'checked':''} onchange="toggleTool(${t.ID},this.checked)"><span class="slider"></span></label></td>
         <td><button class="btn btn-danger btn-xs" onclick="deleteTool(${t.ID})">删除</button></td>
-      </tr>
-    `).join('');
-
-    tools.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.tool_name;
-      opt.textContent = `${t.tool_name} (${t.http_method})${t.enabled ? '' : ' [禁用]'}`;
-      opt.dataset.method = t.http_method;
-      opt.dataset.url = t.backend_url;
-      opt.dataset.schema = JSON.stringify(t.input_schema || {});
-      testerSelect.appendChild(opt);
-    });
-  } catch (e) {
-    toast('加载工具列表失败: ' + e.message, 'error');
-  }
-}
-
-// ====== 启用/禁用切换 ======
-async function toggleTool(id, enabled) {
-  try {
-    await fetch('/api/tools/' + id + '/toggle', { method: 'PUT' });
-    toast(enabled ? '工具已启用' : '工具已禁用', 'success');
-    await refreshTools();
-  } catch (e) {
-    toast('操作失败: ' + e.message, 'error');
-    await refreshTools(); // 还原状态
-  }
-}
-
-// ====== 占位符 ======
-function buildPlaceholder(def) {
-  if (!def || typeof def !== 'object') return '"请填写"';
-  const type = def.type || 'string';
-  const desc = def.description || '';
-  const m = desc.match(/[如例如][:：]?\s*([A-Za-z0-9_\-一-龥]+)/);
-  if (m) {
-    const ex = m[1].replace(/[等或]$/, '');
-    if (type === 'number' && !isNaN(parseFloat(ex))) return parseFloat(ex);
-    return ex;
-  }
-  switch (type) {
-    case 'number': case 'integer': return 0;
-    case 'boolean': return false;
-    default: return '请填写';
-  }
-}
-
-function buildPlaceholders(schema) {
-  const r = {}; if (!schema) return r;
-  for (const [k, def] of Object.entries(schema)) r[k] = buildPlaceholder(def);
-  return r;
-}
-
-// ====== 创建 / 删除 ======
-function showCreateForm() { document.getElementById('create-form').style.display = 'block'; }
-function hideCreateForm() { document.getElementById('create-form').style.display = 'none'; }
-
-async function createTool() {
-  const name = document.getElementById('new-name').value.trim();
-  const method = document.getElementById('new-method').value;
-  const desc = document.getElementById('new-desc').value.trim();
-  const url = document.getElementById('new-url').value.trim();
-  const schemaStr = document.getElementById('new-schema').value.trim();
-  if (!name || !desc || !url) { toast('请填写工具名称、描述和后端地址', 'error'); return; }
-  let schema = {};
-  if (schemaStr) { try { schema = JSON.parse(schemaStr); } catch { toast('Schema 不是合法 JSON', 'error'); return; } }
-  try {
-    await api('/api/tools', {
-      method: 'POST',
-      body: JSON.stringify({ gateway_id: currentGatewayID, tool_name: name, description: desc, input_schema: schema, backend_url: url, http_method: method })
-    });
-    toast('创建成功', 'success');
-    hideCreateForm();
-    ['new-name','new-desc','new-url','new-schema'].forEach(id => document.getElementById(id).value = '');
-    await refreshTools();
-  } catch (e) { toast('创建失败: ' + e.message, 'error'); }
-}
-
-async function deleteTool(id) {
-  if (!confirm('确定要删除该工具吗？')) return;
-  try { await api('/api/tools/' + id, { method: 'DELETE' }); toast('已删除', 'success'); await refreshTools(); }
-  catch (e) { toast('删除失败: ' + e.message, 'error'); }
-}
-
-// ====== OpenAPI 导入 ======
-let importPreviewData = null; // 缓存预览结果
-
-function showImportForm() { document.getElementById('import-form').style.display = 'block'; }
-function hideImportForm() {
-  document.getElementById('import-form').style.display = 'none';
-  document.getElementById('import-preview').style.display = 'none';
-  importPreviewData = null;
-}
-
-async function previewImport() {
-  const url = document.getElementById('import-url').value.trim();
-  const spec = document.getElementById('import-spec').value.trim();
-  const baseURL = document.getElementById('import-baseurl').value.trim();
-
-  if (!url && !spec) { toast('请填写文档 URL 或粘贴文档内容', 'warn'); return; }
-
-  const btn = document.getElementById('btn-preview');
-  btn.disabled = true; btn.textContent = '解析中...';
-
-  const previewDiv = document.getElementById('import-preview');
-  previewDiv.style.display = 'block';
-  previewDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">正在解析 API 文档...</div>';
-
-  try {
-    const body = { base_url: baseURL || '', gateway_id: currentGatewayID };
-    if (url) body.url = url; else body.spec = spec;
-
-    const res = await fetch('/api/tools/import?preview=true', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '解析失败');
-
-    importPreviewData = data;
-
-    previewDiv.innerHTML = `
-      <div style="background:#e7f7ef;padding:12px;border-radius:8px;margin-bottom:12px;">
-        <strong>${esc(data.title || '未命名 API')}</strong> &nbsp;
-        <span style="color:var(--muted);">${data.spec_version} · ${data.base_url} · ${data.total} 个端点</span>
-      </div>
-      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
-        ${data.tools.map((t, i) => `
-          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${i%2===0?'background:#fafbfc':''}">
-            <input type="checkbox" class="import-check" value="${esc(t.tool_name)}" checked style="margin-top:3px;width:auto;">
-            <div>
-              <strong>${esc(t.tool_name)}</strong>
-              <span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span>
-              <div style="font-size:0.8rem;color:var(--muted);margin-top:2px;">${esc(t.description)}</div>
-              <div style="font-size:0.75rem;font-family:monospace;color:var(--muted);">${esc(t.backend_url)}</div>
-            </div>
-          </label>
-        `).join('')}
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-primary" onclick="confirmImport()">确认导入选中工具</button>
-        <button class="btn" style="background:#eee;" onclick="document.querySelectorAll('.import-check').forEach(c=>c.checked=!c.checked)">全选/反选</button>
-        <span style="font-size:0.85rem;color:var(--muted);" id="import-count">已选 ${data.total} 个</span>
-      </div>
-    `;
-
-    // 绑定 checkbox 变化事件更新计数
-    document.querySelectorAll('.import-check').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const n = document.querySelectorAll('.import-check:checked').length;
-        document.getElementById('import-count').textContent = '已选 ' + n + ' 个';
-      });
-    });
-  } catch (e) {
-    previewDiv.innerHTML = '<div style="color:var(--danger);padding:12px;">❌ ' + esc(e.message) + '</div>';
-  } finally {
-    btn.disabled = false; btn.textContent = '🔍 预览工具列表';
-  }
-}
-
-async function confirmImport() {
-  if (!importPreviewData) return;
-  const checked = [...document.querySelectorAll('.import-check:checked')].map(c => c.value);
-
-  const body = {
-    tool_names: checked,
-    base_url: importPreviewData.base_url,
-    gateway_id: currentGatewayID,
-  };
-  // 重新发一次 spec/url 给导入接口
-  const url = document.getElementById('import-url').value.trim();
-  const spec = document.getElementById('import-spec').value.trim();
-  if (url) body.url = url; else body.spec = spec;
-
-  try {
-    const res = await fetch('/api/tools/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '导入失败');
-    toast(data.message, 'success');
-    hideImportForm();
-    await refreshTools();
-  } catch (e) {
-    toast('导入失败: ' + e.message, 'error');
-  }
-}
-
-// ====== 调用日志 ======
-async function refreshLogs() {
-  const tbody = document.getElementById('logs-tbody');
-  const empty = document.getElementById('logs-empty');
-  try {
-    const data = await api('/api/logs?limit=50');
-    document.getElementById('stat-calls').textContent = data.total;
-    if (data.logs.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-
-    tbody.innerHTML = data.logs.map(l => {
-      const time = new Date(l.CreatedAt).toLocaleString('zh-CN');
-      const statusTag = l.error_msg
-        ? '<span class="tag" style="background:#ffe6e0;color:#d63031;">失败</span>'
-        : '<span class="tag tag-post">' + l.status_code + '</span>';
-      const callerTag = '<span class="tag tag-' + (l.caller === 'WEB' ? 'web' : 'mcp') + '">' + l.caller + '</span>';
-      const argsPreview = esc((l.request_args || '').substring(0, 60));
-      return `<tr>
-        <td style="white-space:nowrap;font-size:0.82rem;">${time}</td>
-        <td><strong>${esc(l.tool_name)}</strong></td>
-        <td>${callerTag}</td>
-        <td>${statusTag}</td>
-        <td style="white-space:nowrap;">${l.latency_ms}ms</td>
-        <td style="font-family:monospace;font-size:0.78rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(l.request_args)}">${argsPreview}</td>
       </tr>`;
     }).join('');
-  } catch (e) { /* 静默 */ }
-}
 
-// ====== 会话列表 ======
-async function refreshSessions() {
-  try {
-    const data = await api('/api/sessions');
-    document.getElementById('stat-sessions').textContent = data.total;
-    const tbody = document.getElementById('sessions-tbody');
-    const empty = document.getElementById('sessions-empty');
-    if (data.sessions.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    tbody.innerHTML = data.sessions.map(s => `
-      <tr><td><span style="font-family:monospace;color:var(--primary);">${esc(s.id)}</span></td></tr>
-    `).join('');
-  } catch (e) {}
-}
-
-// ====== 工具测试 ======
-document.getElementById('test-tool').addEventListener('change', function() {
-  const opt = this.selectedOptions[0];
-  const resultEl = document.getElementById('test-result'); resultEl.style.display = 'none';
-  if (!opt || !opt.value) {
-    document.getElementById('test-method').value = '';
-    document.getElementById('test-url').value = '';
-    document.getElementById('test-args').value = '';
-    return;
-  }
-  document.getElementById('test-method').value = opt.dataset.method;
-  document.getElementById('test-url').value = opt.dataset.url;
-  try {
-    const schema = JSON.parse(opt.dataset.schema);
-    document.getElementById('test-args').value = JSON.stringify(buildPlaceholders(schema), null, 2);
-  } catch { document.getElementById('test-args').value = '{}'; }
-});
-
-async function testTool() {
-  const toolName = document.getElementById('test-tool').value;
-  if (!toolName) { toast('请先选择一个工具', 'error'); return; }
-  let args;
-  try { args = JSON.parse(document.getElementById('test-args').value); }
-  catch { toast('参数不是合法 JSON', 'error'); return; }
-
-  const resultBox = document.getElementById('test-result');
-  resultBox.style.display = 'block'; resultBox.className = 'result-box'; resultBox.textContent = '请求中...';
-
-  try {
-    const data = await api('/api/tools/test', {
-      method: 'POST',
-      body: JSON.stringify({ tool_name: toolName, args: args, gateway_id: currentGatewayID })
+    tools.forEach(t=>{
+      const opt=document.createElement('option');
+      opt.value=t.tool_name;opt.textContent=`${t.tool_name} ${t.enabled?'':'[禁用]'}`;
+      opt.dataset.method=t.http_method;opt.dataset.url=t.backend_url;
+      opt.dataset.protocol=t.protocol||'http';
+      opt.dataset.schema=JSON.stringify(t.input_schema||{});
+      testSel.appendChild(opt);
     });
-    resultBox.textContent = JSON.stringify(data, null, 2);
-    toast('测试完成', 'success');
-    refreshLogs(); // 刷新日志
-  } catch (e) {
-    const msg = e.message || '';
-    resultBox.className = 'result-box error';
-    if (msg.includes('connection refused')) {
-      resultBox.textContent = '❌ 无法连接模拟后端 (localhost:9090)\n\n请先在新终端运行:\n  go run cmd/mock-backend/main.go';
-      toast('模拟后端未启动', 'warn');
-    } else {
-      resultBox.textContent = '❌ ' + msg;
-      toast('测试失败: ' + msg, 'error');
-    }
+  }catch(e){}
+}
+async function toggleTool(id,on){
+  try{await fetch('/api/tools/'+id+'/toggle',{method:'PUT'});toast(on?'已启用':'已禁用');refreshTools()}catch(e){toast(e.message,'error')}
+}
+async function deleteTool(id){
+  if(!confirm('删除该工具？'))return;
+  try{await api('/api/tools/'+id,{method:'DELETE'});toast('已删除');refreshTools()}catch(e){toast(e.message,'error')}
+}
+
+// ====== Tool create modal ======
+function showToolModal(){
+  document.getElementById('modal-overlay').style.display='flex';
+  document.getElementById('modal-content').innerHTML=`
+    <h3>新建工具</h3>
+    <div class="form-row">
+      <div class="form-group"><label>名称 *</label><input id="mf-name" placeholder="get_order_detail" /></div>
+      <div class="form-group"><label>协议</label><select id="mf-protocol" onchange="document.getElementById('mf-method-row').style.display=this.value==='grpc'?'none':'block'"><option value="http">HTTP</option><option value="grpc">gRPC</option></select></div>
+    </div>
+    <div class="form-group"><label>描述 *</label><input id="mf-desc" placeholder="查询订单详情" /></div>
+    <div class="form-group"><label>后端地址 *</label><input id="mf-url" placeholder="HTTP: http://localhost:9090/api/orders/{id} | gRPC: localhost:50051" /></div>
+    <div class="form-row" id="mf-method-row">
+      <div class="form-group"><label>HTTP 方法</label><select id="mf-method"><option>GET</option><option>POST</option></select></div>
+    </div>
+    <div class="form-group"><label>Input Schema (JSON)</label><textarea id="mf-schema" rows="3" placeholder='{"id":{"type":"string"}}'></textarea></div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="createTool()">确认创建</button>
+      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    </div>`;
+}
+function closeModal(){document.getElementById('modal-overlay').style.display='none'}
+async function createTool(){
+  const name=document.getElementById('mf-name').value.trim();
+  const protocol=document.getElementById('mf-protocol').value;
+  const desc=document.getElementById('mf-desc').value.trim();
+  const url=document.getElementById('mf-url').value.trim();
+  const method=protocol==='grpc'?'GRPC':document.getElementById('mf-method').value;
+  const schemaStr=document.getElementById('mf-schema').value.trim();
+  if(!name||!desc||!url){toast('请填写名称、描述和后端地址','error');return}
+  let schema={};if(schemaStr){try{schema=JSON.parse(schemaStr)}catch{toast('Schema 不是合法 JSON','error');return}}
+  try{
+    await api('/api/tools',{method:'POST',body:JSON.stringify({
+      gateway_id:currentGw,tool_name:name,description:desc,input_schema:schema,
+      backend_url:url,http_method:method,protocol:protocol
+    })});
+    toast('创建成功');closeModal();refreshTools();
+  }catch(e){toast(e.message,'error')}
+}
+
+// ====== Gateway modal ======
+function showGatewayModal(){
+  document.getElementById('modal-overlay').style.display='flex';
+  document.getElementById('modal-content').innerHTML=`
+    <h3>新建网关</h3>
+    <div class="form-group"><label>名称 *</label><input id="mgw-name" placeholder="订单服务网关" /></div>
+    <div class="form-group"><label>描述</label><input id="mgw-desc" placeholder="网关用途说明" /></div>
+    <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="mgw-auth" style="width:auto" /> 需要 API Key 认证</label></div>
+    <div class="form-actions">
+      <button class="btn btn-primary" onclick="createGateway()">确认创建</button>
+      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    </div>`;
+}
+async function createGateway(){
+  const name=document.getElementById('mgw-name').value.trim();
+  if(!name){toast('请填写名称','error');return}
+  try{
+    await api('/api/gateways',{method:'POST',body:JSON.stringify({
+      name,description:document.getElementById('mgw-desc').value.trim(),
+      api_key_required:document.getElementById('mgw-auth').checked
+    })});
+    toast('网关创建成功');closeModal();refreshAll();
+  }catch(e){toast(e.message,'error')}
+}
+async function toggleGateway(id){
+  try{await api('/api/gateways/'+id+'/toggle',{method:'PUT'});refreshAll()}catch(e){toast(e.message,'error')}
+}
+async function deleteGateway(id){
+  if(!confirm('删除该网关？所有关联工具也会受影响。'))return;
+  try{await api('/api/gateways/'+id,{method:'DELETE'});toast('已删除');refreshAll()}catch(e){toast(e.message,'error')}
+}
+
+// Refresh gateways table
+async function refreshGateways(){
+  try{
+    gateways=(await api('/api/gateways')).gateways||[];
+    const tbody=document.getElementById('gw-tbody');
+    tbody.innerHTML=gateways.map(g=>`<tr>
+      <td><strong>${esc(g.Name)}</strong></td>
+      <td>${esc(g.Description||'-')}</td>
+      <td>${g.api_key_required?'<span class="tag tag-error">🔒 需要 Key</span>':'<span class="tag tag-success">🌐 公开</span>'}</td>
+      <td><label class="toggle"><input type="checkbox" ${g.Enabled?'checked':''} onchange="toggleGateway(${g.ID})"><span class="slider"></span></label></td>
+      <td><button class="btn btn-danger btn-xs" onclick="deleteGateway(${g.ID})">删除</button></td>
+    </tr>`).join('');
+  }catch(e){}
+}
+
+// ====== Import ======
+async function previewImport(){
+  const url=document.getElementById('import-url').value.trim(),spec=document.getElementById('import-spec').value.trim();
+  if(!url&&!spec){toast('请填写 URL 或粘贴文档','warn');return}
+  const div=document.getElementById('import-preview');div.style.display='block';div.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted)">解析中...</div>';
+  try{
+    const body={base_url:document.getElementById('import-baseurl').value.trim()||'',gateway_id:currentGw};
+    if(url)body.url=url;else body.spec=spec;
+    const res=await fetch('/api/tools/import?preview=true',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||'失败');
+    importPreview=data;
+    div.innerHTML=`<div style="background:#ecfdf5;padding:12px;border-radius:8px;margin-bottom:12px;font-size:.85rem">
+      <strong>${esc(data.title||'API')}</strong> · ${data.spec_version} · ${data.base_url} · ${data.total} 个端点</div>
+      <div class="preview-list">${data.tools.map((t,i)=>`<label class="preview-item" style="${i%2?'background:#fafbfd':''}">
+        <input type="checkbox" class="imp-check" value="${esc(t.tool_name)}" checked style="width:auto">
+        <div><strong>${esc(t.tool_name)}</strong> <span class="tag tag-${t.http_method.toLowerCase()}">${t.http_method}</span><div style="font-size:.78rem;color:var(--muted)">${esc(t.description)}</div></div>
+      </label>`).join('')}</div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="confirmImport()">确认导入选中</button>
+        <span style="font-size:.82rem;color:var(--muted)" id="imp-count">已选 ${data.total} 个</span>
+      </div>`;
+    document.querySelectorAll('.imp-check').forEach(cb=>cb.addEventListener('change',()=>{
+      document.getElementById('imp-count').textContent='已选 '+document.querySelectorAll('.imp-check:checked').length+' 个';
+    }));
+  }catch(e){div.innerHTML=`<div style="color:var(--red);padding:12px">❌ ${esc(e.message)}</div>`}
+}
+async function confirmImport(){
+  if(!importPreview)return;
+  const checked=[...document.querySelectorAll('.imp-check:checked')].map(c=>c.value);
+  const body={tool_names:checked,base_url:importPreview.base_url,gateway_id:currentGw};
+  const url=document.getElementById('import-url').value.trim();
+  if(url)body.url=url;else body.spec=document.getElementById('import-spec').value.trim();
+  try{
+    const res=await fetch('/api/tools/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||'失败');
+    toast(data.message||'导入完成');document.getElementById('import-preview').style.display='none';
+    refreshTools();
+  }catch(e){toast(e.message,'error')}
+}
+async function importGrpc(){
+  const proto=document.getElementById('grpc-proto').value.trim(),addr=document.getElementById('grpc-addr').value.trim();
+  if(!proto||!addr){toast('请填写 proto 内容和 gRPC 地址','error');return}
+  try{
+    const data=await api('/api/tools/import-grpc',{method:'POST',body:JSON.stringify({proto_content:proto,addr,gateway_id:currentGw})});
+    toast(data.message||'导入完成');refreshTools();
+  }catch(e){toast(e.message,'error')}
+}
+
+// ====== Tool test ======
+function onTestToolChange(){
+  const opt=document.getElementById('test-tool').selectedOptions[0];
+  document.getElementById('test-result').style.display='none';
+  if(!opt||!opt.value){document.getElementById('test-method').value='';document.getElementById('test-url').value='';document.getElementById('test-args').value='';return}
+  document.getElementById('test-method').value=opt.dataset.method;
+  document.getElementById('test-url').value=opt.dataset.url;
+  try{const s=JSON.parse(opt.dataset.schema);document.getElementById('test-args').value=JSON.stringify(buildPlaceholders(s),null,2)}
+  catch{document.getElementById('test-args').value='{}'}
+}
+function buildPlaceholder(def){
+  if(!def||typeof def!=='object')return'"请填写"';
+  var t=def.type||'string',desc=def.description||'',m=desc.match(/[如例如][:：]?\s*([A-Za-z0-9_\-一-龥]+)/);
+  if(m){var ex=m[1].replace(/[等或]$/,'');if(t==='number'&&!isNaN(parseFloat(ex)))return parseFloat(ex);return ex}
+  switch(t){case'number':case'integer':return 0;case'boolean':return false;default:return'请填写'}
+}
+function buildPlaceholders(s){var r={};if(!s)return r;for(var k in s)r[k]=buildPlaceholder(s[k]);return r}
+async function testTool(){
+  var toolName=document.getElementById('test-tool').value;if(!toolName){toast('请选择工具','error');return}
+  var args;try{args=JSON.parse(document.getElementById('test-args').value)}catch{toast('参数不是合法 JSON','error');return}
+  var box=document.getElementById('test-result');box.style.display='block';box.className='result-box';box.textContent='请求中...';
+  try{
+    var data=await api('/api/tools/test',{method:'POST',body:JSON.stringify({tool_name:toolName,args:args,gateway_id:currentGw})});
+    box.textContent=JSON.stringify(data,null,2);toast('测试完成');
     refreshLogs();
+  }catch(e){
+    box.className='result-box error';
+    if(e.message.includes('connection refused')){box.textContent='❌ 无法连接后端\n\n请启动: go run cmd/mock-backend/main.go';toast('后端未启动','warn')}
+    else{box.textContent='❌ '+e.message;toast(e.message,'error')}
   }
 }
 
-// ====== 工具函数 ======
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function toast(msg, type) {
-  const container = document.getElementById('toasts');
-  const el = document.createElement('div');
-  el.className = 'toast toast-' + type;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+// ====== Logs ======
+async function refreshLogs(){
+  try{
+    var data=await api('/api/logs?limit=50'),tbody=document.getElementById('logs-tbody'),empty=document.getElementById('logs-empty');
+    document.getElementById('ov-calls').textContent=data.total;
+    if(!data.logs.length){tbody.innerHTML='';empty.style.display='block';return}
+    empty.style.display='none';
+    tbody.innerHTML=data.logs.map(l=>{
+      var time=new Date(l.CreatedAt).toLocaleString('zh-CN'),statusTag=l.error_msg?`<span class="tag tag-error">失败</span>`:`<span class="tag tag-success">${l.status_code}</span>`;
+      return`<tr><td style="white-space:nowrap;font-size:.8rem">${time}</td><td><strong>${esc(l.tool_name)}</strong></td><td><span class="tag tag-muted">${l.caller||'MCP'}</span></td><td>${statusTag}</td><td>${l.latency_ms}ms</td><td style="font-family:var(--mono);font-size:.76rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.request_args)}">${esc((l.request_args||'').substring(0,50))}</td></tr>`;
+    }).join('');
+  }catch(e){}
 }
+
+// ====== Sessions ======
+async function refreshSessions(){
+  try{
+    var data=await api('/api/sessions'),tbody=document.getElementById('sessions-tbody'),empty=document.getElementById('sessions-empty');
+    document.getElementById('ov-sessions').textContent=data.total;
+    if(!data.sessions.length){tbody.innerHTML='';empty.style.display='block';return}
+    empty.style.display='none';
+    tbody.innerHTML=data.sessions.map(s=>`<tr><td style="font-family:var(--mono);font-size:.8rem;color:var(--accent)">${esc(s.id)}</td><td>${esc(s.gateway_name||'-')}</td></tr>`).join('');
+  }catch(e){}
+}
+
+// ====== Backend health ======
+async function checkBackend(){
+  var el=document.getElementById('ov-backend');if(!el)return;
+  try{var d=await api('/api/health');el.innerHTML=d.backend==='online'?'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);margin-right:6px"></span>运行中':'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--red);margin-right:6px"></span>离线';document.getElementById('test-backend-warn').style.display=d.backend==='online'?'none':'block'}
+  catch(e){}
+}
+
+// ====== Utils ======
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function toast(msg,type){type=type||'success';var c=document.getElementById('toasts'),el=document.createElement('div');el.className='toast toast-'+type;el.textContent=msg;c.appendChild(el);setTimeout(function(){el.remove()},3500)}
+
+// ====== Override refreshAll to include gateways table ======
+var _origRefreshAll=refreshAll;
+refreshAll=async function(){
+  await _origRefreshAll();
+  await refreshGateways();
+};
 </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 #!/bin/bash
-# MCP Gateway 端到端测试 —— 一键启动所有服务
+# MCP Gateway 端到端启动脚本 —— 一键启动所有服务
 #
-# 启动顺序: mock-backend → seed → gateway → mock-client
+# 启动: bash scripts/run-all.sh
 # 退出时自动清理所有后台进程
 
 set -e
@@ -10,53 +10,62 @@ cd "$ROOT_DIR"
 
 cleanup() {
     echo ""
-    echo "正在清理后台进程..."
-    kill $MOCK_PID $GATEWAY_PID 2>/dev/null || true
-    wait $MOCK_PID $GATEWAY_PID 2>/dev/null || true
-    echo "已清理。"
+    echo "Stopping services..."
+    kill $MOCK_PID $GRPC_PID $GATEWAY_PID 2>/dev/null || true
+    wait $MOCK_PID $GRPC_PID $GATEWAY_PID 2>/dev/null || true
+    echo "All services stopped."
 }
 trap cleanup EXIT INT TERM
 
-echo "═══════════════════════════════════════════"
-echo "  MCP Gateway 端到端测试启动脚本"
-echo "═══════════════════════════════════════════"
+echo "==========================================="
+echo "  MCP Gateway — E2E Startup"
+echo "==========================================="
 echo ""
 
-# 1. 编译所有组件
-echo "[1/5] 编译组件..."
+# 1. Build all components
+echo "[1/6] Building..."
 go build -o /tmp/mcp-gateway ./cmd/server/ &
-go build -o /tmp/mock-backend ./cmd/mock-backend/ &
-go build -o /tmp/mock-client ./cmd/mock-client/ &
-go build -o /tmp/seed ./cmd/seed/ &
+go build -o /tmp/mock-backend ./dev/mock-backend/ &
+go build -o /tmp/mock-grpc-backend ./dev/mock-grpc-backend/ &
+go build -o /tmp/mock-client ./dev/mock-client/ &
+go build -o /tmp/seed ./dev/seed/ &
 wait
-echo "  ✓ 编译完成"
+echo "  Done"
 
-# 2. 启动模拟企业后端
-echo "[2/5] 启动模拟企业后端 (port 9090)..."
-/tmp/mock-backend &
+# 2. Start HTTP mock backend
+rm -f /tmp/gateway.db
+echo "[2/6] Starting HTTP mock backend (port 9090)..."
+/tmp/mock-backend > /dev/null 2>&1 &
 MOCK_PID=$!
 sleep 1
-echo "  ✓ 模拟后端 PID=$MOCK_PID"
+echo "  PID=$MOCK_PID"
 
-# 3. 写入种子数据
-echo "[3/5] 写入工具配置种子数据..."
-/tmp/seed
-echo "  ✓ 种子数据就绪"
-
-# 4. 启动 MCP Gateway
-echo "[4/5] 启动 MCP Gateway (port 8080)..."
-/tmp/mcp-gateway &
-GATEWAY_PID=$!
+# 3. Start gRPC mock backend
+echo "[3/6] Starting gRPC mock backend (port 50052)..."
+GRPC_PORT=50052 /tmp/mock-grpc-backend > /dev/null 2>&1 &
+GRPC_PID=$!
 sleep 1
-echo "  ✓ Gateway PID=$GATEWAY_PID"
+echo "  PID=$GRPC_PID"
 
-# 5. 运行 AI 客户端模拟器
-echo "[5/5] 运行 AI 客户端模拟器..."
+# 4. Seed data
+echo "[4/6] Seeding database..."
+/tmp/seed > /dev/null 2>&1
+echo "  Done"
+
+# 5. Start gateway
+echo "[5/6] Starting MCP Gateway (port 8080)..."
+/tmp/mcp-gateway > /dev/null 2>&1 &
+GATEWAY_PID=$!
+sleep 2
+echo "  PID=$GATEWAY_PID"
+
+# 6. Run mock client (SSE + Streamable HTTP)
+echo "[6/6] Running mock client..."
 echo ""
 /tmp/mock-client
-CLIENT_EXIT=$?
+EXIT_CODE=$?
 
 echo ""
-echo "═══════════════════════════════════════════"
-echo "  测试结束 (退出码: $CLIENT_EXIT)"
-echo "═══════════════════════════════════════════"
+echo "==========================================="
+echo "  Done (exit: $EXIT_CODE)"
+echo "==========================================="

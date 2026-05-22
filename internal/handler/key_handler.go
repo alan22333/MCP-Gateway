@@ -9,21 +9,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// KeyHandler API Key 管理 HTTP handler
 type KeyHandler struct {
 	repo *repository.ApiToolRepo
 }
 
+// NewKeyHandler 创建 API Key 管理 handler
 func NewKeyHandler(repo *repository.ApiToolRepo) *KeyHandler {
 	return &KeyHandler{repo: repo}
 }
 
+// RegisterRoutes 注册 API Key 管理路由到指定的 RouterGroup
 func (h *KeyHandler) RegisterRoutes(r gin.IRouter) {
-	r.GET("/api/keys", h.List)
-	r.POST("/api/keys", h.Create)
-	r.DELETE("/api/keys/:id", h.Delete)
-	r.PUT("/api/keys/:id/toggle", h.Toggle)
+	r.GET("/keys", h.List)
+	r.POST("/keys", h.Create)
+	r.DELETE("/keys/:id", h.Delete)
+	r.PUT("/keys/:id/toggle", h.Toggle)
 }
 
+// SeedDefault 在认证启用时确保存在一条默认演示密钥
+// 如果密钥已存在则跳过，避免重复创建
 func (h *KeyHandler) SeedDefault(logger *zap.Logger) {
 	defaultKey := "mcp-gw-sk-demo-key-2026"
 	_, err := h.repo.GetApiKeyByValue(defaultKey)
@@ -39,6 +44,7 @@ func (h *KeyHandler) SeedDefault(logger *zap.Logger) {
 	}
 }
 
+// List 返回 API Key 列表，可通过 ?gateway_id=X 过滤
 func (h *KeyHandler) List(c *gin.Context) {
 	gatewayID := parseGatewayID(c)
 	var keys []model.ApiKey
@@ -55,6 +61,8 @@ func (h *KeyHandler) List(c *gin.Context) {
 	c.JSON(200, gin.H{"keys": keys, "total": len(keys)})
 }
 
+// Create 创建新 API Key，gateway_id 可选
+// key 字段在数据库中为唯一索引，重复创建会返回 500
 func (h *KeyHandler) Create(c *gin.Context) {
 	var input struct {
 		GatewayID uint   `json:"gateway_id"`
@@ -76,6 +84,7 @@ func (h *KeyHandler) Create(c *gin.Context) {
 	c.JSON(201, ak)
 }
 
+// Delete 删除指定 ID 的 API Key
 func (h *KeyHandler) Delete(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	if id == 0 {
@@ -89,6 +98,7 @@ func (h *KeyHandler) Delete(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "删除成功"})
 }
 
+// Toggle 切换 API Key 的启用/禁用状态
 func (h *KeyHandler) Toggle(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	if id == 0 {

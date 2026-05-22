@@ -84,7 +84,7 @@ func InitializeApp() (*App, error) {
 
 	// 8. 核心服务
 	cacheTTL := time.Duration(cfg.Cache.TTL) * time.Second
-	svc := service.NewMcpService(apiRepo, httpProxy, cbManager, toolCache, cacheTTL, logger)
+	svc := service.NewMcpService(apiRepo, httpProxy, nil, cbManager, toolCache, cacheTTL, logger)
 
 	// 9. 会话管理器
 	sessionMgr := handler.NewSessionManager()

@@ -190,7 +190,7 @@ func TestStreamableHandler_ToolsCall_RealService(t *testing.T) {
 	mgr := NewSessionManager()
 
 	// 使用真实的 McpService（但 proxy 为 nil —— 只测请求路由）
-	svc := service.NewMcpService(repo, nil, nil, nil, 0, logger)
+	svc := service.NewMcpService(repo, nil, nil, nil, nil, 0, logger)
 
 	handler := NewStreamableHandler(mgr, repo, svc, logger)
 

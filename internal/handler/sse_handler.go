@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"mcp-gateway-go-demo/internal/metrics"
 	"mcp-gateway-go-demo/internal/repository"
@@ -14,10 +13,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// McpHandler 处理 MCP 相关的 HTTP 请求
+// McpHandler 处理 MCP 相关的 HTTP 请求（旧版 SSE 传输）
 type McpHandler struct {
 	sessionMgr *SessionManager
-	repo       *repository.ApiToolRepo // 用于网关/API Key 查询
+	gwResolver *gatewayResolver // 共享的网关解析器
 	processor  RequestProcessor
 	logger     *zap.Logger
 }
@@ -31,7 +30,7 @@ type RequestProcessor interface {
 func NewMcpHandler(sessionMgr *SessionManager, repo *repository.ApiToolRepo, processor RequestProcessor, logger *zap.Logger) *McpHandler {
 	return &McpHandler{
 		sessionMgr: sessionMgr,
-		repo:       repo,
+		gwResolver: &gatewayResolver{repo: repo},
 		processor:  processor,
 		logger:     logger,
 	}
@@ -47,7 +46,7 @@ func (h *McpHandler) HandleSSE(c *gin.Context) {
 	}
 
 	// ── 网关解析 ──
-	gatewayID, gatewayName := h.resolveGateway(c)
+	gatewayID, gatewayName := h.gwResolver.resolve(c)
 
 	session := h.sessionMgr.Create(gatewayID, gatewayName)
 	defer h.sessionMgr.Remove(session.ID)
@@ -61,7 +60,11 @@ func (h *McpHandler) HandleSSE(c *gin.Context) {
 		zap.String("gateway_name", gatewayName))
 
 	sessionEvent := map[string]string{"session_id": session.ID}
-	payload, _ := json.Marshal(sessionEvent)
+	payload, err := json.Marshal(sessionEvent)
+	if err != nil {
+		h.logger.Error("序列化 session 事件失败", zap.Error(err))
+		return
+	}
 	if err := writer.WriteEvent(string(payload)); err != nil {
 		return
 	}
@@ -69,7 +72,11 @@ func (h *McpHandler) HandleSSE(c *gin.Context) {
 	for {
 		select {
 		case resp := <-session.Response:
-			data, _ := json.Marshal(resp)
+			data, err := json.Marshal(resp)
+			if err != nil {
+				h.logger.Error("序列化响应失败", zap.Error(err))
+				continue
+			}
 			if err := writer.WriteEvent(string(data)); err != nil {
 				h.logger.Warn("SSE 写入失败", zap.Error(err))
 				return
@@ -81,34 +88,6 @@ func (h *McpHandler) HandleSSE(c *gin.Context) {
 			return
 		}
 	}
-}
-
-// resolveGateway 从请求参数中解析网关
-// 优先级：api_key 查 ApiKey → gateway 查 Gateway → 默认网关
-func (h *McpHandler) resolveGateway(c *gin.Context) (uint, string) {
-	// 1. 从 api_key 查
-	if apiKey := c.Query("api_key"); apiKey != "" {
-		if key, err := h.repo.GetApiKeyByValue(apiKey); err == nil && key != nil {
-			gw, gwErr := h.repo.GetGatewayByID(key.GatewayID)
-			if gwErr == nil && gw.Enabled {
-				return gw.ID, gw.Name
-			}
-		}
-	}
-
-	// 2. 从 gateway 参数查
-	if gwName := c.Query("gateway"); gwName != "" {
-		if gw, err := h.repo.GetGatewayByName(gwName); err == nil && gw.Enabled {
-			return gw.ID, gw.Name
-		}
-	}
-
-	// 3. 回退：默认网关
-	if gw, err := h.repo.GetGatewayByName("Default Gateway"); err == nil {
-		return gw.ID, gw.Name
-	}
-
-	return 0, "default"
 }
 
 // HandleMessage 处理 POST /mcp/message —— 接收 JSON-RPC 请求并异步返回结果
@@ -126,12 +105,11 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 		return
 	}
 
-	// ── 1. 令牌桶限流 ──
-	if session.LimitEnabled && !session.Limiter.Allow() {
-		h.logger.Warn("触发限流", zap.String("session_id", sessionID))
+	// ── 1. 限流 + 并发控制 ──
+	if msg := session.CheckGate(); msg != "" {
+		h.logger.Warn("流量控制触发", zap.String("session_id", sessionID), zap.String("reason", msg))
 		metrics.RecordToolCall("(rate_limited)", "rate_limited", 0)
-		resp := mcp.NewError("rate-limited", mcp.ErrCodeInternal,
-			"请求过于频繁，请稍后重试 (限流: "+fmt.Sprintf("%.0f req/s)", session.Limiter.Limit()))
+		resp := mcp.NewError("rate-limited", mcp.ErrCodeInternal, msg)
 		select {
 		case session.Response <- resp:
 			c.JSON(200, gin.H{"status": "rate_limited"})
@@ -140,23 +118,9 @@ func (h *McpHandler) HandleMessage(c *gin.Context) {
 		}
 		return
 	}
-
-	// ── 2. 并发控制（信号量）──
-	// 每个 session 最多同时处理 maxConcurrent 个请求，超过则返回 429
-	if !session.TryAcquire() {
-		h.logger.Warn("并发限制", zap.String("session_id", sessionID))
-		resp := mcp.NewError("concurrency-limit", mcp.ErrCodeInternal,
-			fmt.Sprintf("并发请求过多，最多允许 %d 个同时进行的调用", session.maxConcurrent))
-		select {
-		case session.Response <- resp:
-			c.JSON(200, gin.H{"status": "concurrency_limited"})
-		default:
-			c.JSON(503, gin.H{"error": "响应通道已满"})
-		}
-		return
-	}
 	defer session.Release()
 
+	// 把请求体中解析为JSON->JSON-RPC协议
 	var req mcp.RPCRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Warn("JSON 解析失败", zap.Error(err))

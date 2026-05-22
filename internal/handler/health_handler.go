@@ -1,31 +1,22 @@
-// 后端健康检查 handler
+// 健康检查 handler — 返回网关自身运行状态
 package handler
 
 import (
-	"mcp-gateway-go-demo/internal/proxy"
-
 	"github.com/gin-gonic/gin"
 )
 
-type HealthHandler struct {
-	proxy *proxy.HttpProxy
+// HealthHandler 健康检查 handler
+type HealthHandler struct{}
+
+// NewHealthHandler 创建健康检查 handler
+func NewHealthHandler() *HealthHandler {
+	return &HealthHandler{}
 }
 
-func NewHealthHandler(p *proxy.HttpProxy) *HealthHandler {
-	return &HealthHandler{proxy: p}
-}
-
-func (h *HealthHandler) RegisterRoutes(r gin.IRouter) {
-	r.GET("/api/health", h.Check)
-}
-
+// Check 返回网关自身健康状态
 func (h *HealthHandler) Check(c *gin.Context) {
-	_, err := h.proxy.Forward(c.Request.Context(), &proxy.ProxyRequest{
-		Method: "GET", URL: "http://localhost:9090/",
+	c.JSON(200, gin.H{
+		"gateway": "online",
+		"version": "2.2.0",
 	})
-	if err != nil {
-		c.JSON(200, gin.H{"backend": "offline", "error": err.Error()})
-		return
-	}
-	c.JSON(200, gin.H{"backend": "online"})
 }

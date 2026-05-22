@@ -78,7 +78,7 @@ var cacheSet = wire.NewSet(
 var serviceSet = wire.NewSet(
 	func(repo *repository.ApiToolRepo, p *proxy.HttpProxy, cb *proxy.CircuitBreakerManager, c cache.ToolCache, cfg *config.Config, logger *zap.Logger) *service.McpService {
 		cacheTTL := time.Duration(cfg.Cache.TTL) * time.Second
-		return service.NewMcpService(repo, p, cb, c, cacheTTL, logger)
+		return service.NewMcpService(repo, p, nil, cb, c, cacheTTL, logger)
 	},
 )
 

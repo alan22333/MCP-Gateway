@@ -9,7 +9,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"mcp-gateway-go-demo/internal/metrics"
@@ -24,7 +23,7 @@ import (
 // StreamableHandler 处理 Streamable HTTP 传输层的 MCP 请求
 type StreamableHandler struct {
 	sessionMgr *SessionManager
-	repo       *repository.ApiToolRepo
+	gwResolver *gatewayResolver // 共享的网关解析器
 	processor  RequestProcessor // 复用 McpService.Process
 	logger     *zap.Logger
 }
@@ -33,7 +32,7 @@ type StreamableHandler struct {
 func NewStreamableHandler(sessionMgr *SessionManager, repo *repository.ApiToolRepo, processor RequestProcessor, logger *zap.Logger) *StreamableHandler {
 	return &StreamableHandler{
 		sessionMgr: sessionMgr,
-		repo:       repo,
+		gwResolver: &gatewayResolver{repo: repo},
 		processor:  processor,
 		logger:     logger,
 	}
@@ -58,7 +57,7 @@ func (h *StreamableHandler) Handle(c *gin.Context) {
 		sessionID = c.Query("session_id")
 	}
 
-	gatewayID, gatewayName := h.resolveGateway(c)
+	gatewayID, gatewayName := h.gwResolver.resolve(c)
 	session := h.sessionMgr.GetOrCreate(sessionID, gatewayID, gatewayName)
 
 	// 如果是新创建的 session（sessionID 为空），在响应头返回 session ID
@@ -66,22 +65,11 @@ func (h *StreamableHandler) Handle(c *gin.Context) {
 		c.Header(mcp.HeaderMcpSessionID, session.ID)
 	}
 
-	// ── 2. 限流检查 ──
-	if session.LimitEnabled && !session.Limiter.Allow() {
-		h.logger.Warn("触发限流", zap.String("session_id", session.ID))
+	// ── 2. 限流 + 并发控制 ──
+	if msg := session.CheckGate(); msg != "" {
+		h.logger.Warn("流量控制触发", zap.String("session_id", session.ID), zap.String("reason", msg))
 		metrics.RecordToolCall("(rate_limited)", "rate_limited", 0)
-		resp := mcp.NewError(nil, mcp.ErrCodeInternal,
-			"请求过于频繁，请稍后重试 (限流: "+fmt.Sprintf("%.0f req/s)", session.Limiter.Limit()))
-		h.writeJSONResponse(c, 429, resp)
-		return
-	}
-
-	// ── 3. 并发控制 ──
-	if !session.TryAcquire() {
-		h.logger.Warn("并发限制", zap.String("session_id", session.ID))
-		resp := mcp.NewError(nil, mcp.ErrCodeInternal,
-			fmt.Sprintf("并发请求过多，最多允许 %d 个同时进行的调用", session.maxConcurrent))
-		h.writeJSONResponse(c, 429, resp)
+		h.writeJSONResponse(c, 429, mcp.NewError(nil, mcp.ErrCodeInternal, msg))
 		return
 	}
 	defer session.Release()
@@ -123,34 +111,6 @@ func (h *StreamableHandler) Handle(c *gin.Context) {
 	}
 }
 
-// resolveGateway 从请求参数中解析网关（与 SSE handler 逻辑相同）
-// 优先级：api_key query param → gateway query param → 默认网关
-func (h *StreamableHandler) resolveGateway(c *gin.Context) (uint, string) {
-	// 1. 从 api_key 查
-	if apiKey := c.Query("api_key"); apiKey != "" {
-		if key, err := h.repo.GetApiKeyByValue(apiKey); err == nil && key != nil {
-			gw, gwErr := h.repo.GetGatewayByID(key.GatewayID)
-			if gwErr == nil && gw.Enabled {
-				return gw.ID, gw.Name
-			}
-		}
-	}
-
-	// 2. 从 gateway 参数查
-	if gwName := c.Query("gateway"); gwName != "" {
-		if gw, err := h.repo.GetGatewayByName(gwName); err == nil && gw.Enabled {
-			return gw.ID, gw.Name
-		}
-	}
-
-	// 3. 回退：默认网关
-	if gw, err := h.repo.GetGatewayByName("Default Gateway"); err == nil {
-		return gw.ID, gw.Name
-	}
-
-	return 0, "default"
-}
-
 // writeJSONResponse 写入 application/json 响应
 func (h *StreamableHandler) writeJSONResponse(c *gin.Context, httpStatus int, resp *mcp.RPCResponse) {
 	c.Header("Content-Type", "application/json")
@@ -167,7 +127,11 @@ func (h *StreamableHandler) writeSSEResponse(c *gin.Context, resp *mcp.RPCRespon
 		return
 	}
 
-	payload, _ := json.Marshal(resp)
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		h.logger.Error("序列化 SSE 响应失败", zap.Error(err))
+		return
+	}
 	if err := writer.WriteEvent(string(payload)); err != nil {
 		h.logger.Warn("SSE 写入失败", zap.Error(err))
 	}

@@ -123,6 +123,18 @@ func (m *SessionManager) GetOrCreate(sessionID string, gatewayID uint, gatewayNa
 	return m.CreateWithID(id, gatewayID, gatewayName)
 }
 
+// CheckGate 检查限流和并发控制，通过则获取并发槽位并返回 nil
+// 失败时返回用户可读的错误消息，调用方应终止处理并返回该消息
+func (s *Session) CheckGate() string {
+	if s.LimitEnabled && !s.Limiter.Allow() {
+		return fmt.Sprintf("请求过于频繁，请稍后重试 (限流: %.0f req/s)", s.Limiter.Limit())
+	}
+	if !s.TryAcquire() {
+		return fmt.Sprintf("并发请求过多，最多允许 %d 个同时进行的调用", s.maxConcurrent)
+	}
+	return ""
+}
+
 // TryAcquire 尝试获取并发槽位，失败返回 false
 func (s *Session) TryAcquire() bool {
 	if s.semaphore == nil {

@@ -18,6 +18,18 @@ type Config struct {
 	RateLimit      RateLimitConfig      `mapstructure:"rate_limit"`
 	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
 	Auth           AuthConfig           `mapstructure:"auth"`
+	Backends       []BackendConfig       `mapstructure:"backends"` // 预注册的后端服务
+}
+
+// BackendConfig 后端服务配置，支持 OpenAPI / gRPC proto 自动导入
+type BackendConfig struct {
+	Name         string `mapstructure:"name"`          // 后端名称
+	OpenAPIURL   string `mapstructure:"openapi_url"`   // OpenAPI 文档 URL
+	OpenAPISpec  string `mapstructure:"openapi_spec"`  // 内联 OpenAPI 文档 (YAML/JSON)
+	BaseURL      string `mapstructure:"base_url"`      // API base URL
+	GrpcProto    string `mapstructure:"grpc_proto"`    // gRPC .proto 文件内容
+	GrpcAddr     string `mapstructure:"grpc_addr"`     // gRPC 服务地址
+	GatewayName  string `mapstructure:"gateway"`       // 归属网关名称（默认 "Default Gateway"）
 }
 
 // ServerConfig 服务器相关配置

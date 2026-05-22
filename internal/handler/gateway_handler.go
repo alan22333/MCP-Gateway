@@ -8,21 +8,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GatewayHandler 网关管理 HTTP handler，提供网关的 CRUD 和启用/禁用操作
 type GatewayHandler struct {
 	repo *repository.ApiToolRepo
 }
 
+// NewGatewayHandler 创建网关管理 handler
 func NewGatewayHandler(repo *repository.ApiToolRepo) *GatewayHandler {
 	return &GatewayHandler{repo: repo}
 }
 
+// RegisterRoutes 注册网关管理路由到指定的 RouterGroup
 func (h *GatewayHandler) RegisterRoutes(r gin.IRouter) {
-	r.GET("/api/gateways", h.List)
-	r.POST("/api/gateways", h.Create)
-	r.DELETE("/api/gateways/:id", h.Delete)
-	r.PUT("/api/gateways/:id/toggle", h.Toggle)
+	r.GET("/gateways", h.List)
+	r.POST("/gateways", h.Create)
+	r.DELETE("/gateways/:id", h.Delete)
+	r.PUT("/gateways/:id/toggle", h.Toggle)
 }
 
+// List 返回所有网关列表
 func (h *GatewayHandler) List(c *gin.Context) {
 	gws, err := h.repo.ListGateways()
 	if err != nil {
@@ -32,6 +36,7 @@ func (h *GatewayHandler) List(c *gin.Context) {
 	c.JSON(200, gin.H{"gateways": gws, "total": len(gws)})
 }
 
+// Create 创建新网关，name 必填，api_key_required 决定该网关是否要求客户端提供 API Key
 func (h *GatewayHandler) Create(c *gin.Context) {
 	var input struct {
 		Name           string `json:"name" binding:"required"`
@@ -52,6 +57,7 @@ func (h *GatewayHandler) Create(c *gin.Context) {
 	c.JSON(201, gw)
 }
 
+// Delete 删除指定 ID 的网关
 func (h *GatewayHandler) Delete(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	if id == 0 {
@@ -65,6 +71,7 @@ func (h *GatewayHandler) Delete(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "删除成功"})
 }
 
+// Toggle 切换网关的启用/禁用状态
 func (h *GatewayHandler) Toggle(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	if id == 0 {

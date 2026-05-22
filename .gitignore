@@ -20,8 +20,10 @@
 # ── 文档 & 学习笔记 ──
 docs/
 *.md
-# 保留项目入口说明
+# 保留 GitHub 入口文件
 !README.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
 
 # ── 系统文件 ──
 .DS_Store
@@ -50,3 +52,5 @@ vendor/
 # ── 临时文件 ──
 *.log
 *.tmp
+
+dev/

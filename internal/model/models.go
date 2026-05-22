@@ -56,8 +56,9 @@ type ApiTool struct {
 	ToolName    string  `gorm:"uniqueIndex:idx_gateway_tool;not null;size:128" json:"tool_name"`             // 工具名（与 GatewayID 组成复合唯一索引）
 	Description string  `gorm:"not null;size:512" json:"description"`                                         // 工具功能描述
 	InputSchema JSONMap `gorm:"type:json;not null" json:"input_schema"`                                      // JSON Schema 参数定义
-	BackendUrl  string  `gorm:"not null;size:512" json:"backend_url"`                                         // 真实被调用的后端地址
-	HttpMethod  string  `gorm:"not null;size:10;default:POST" json:"http_method"`                             // GET、POST 等
+	BackendUrl  string  `gorm:"not null;size:512" json:"backend_url"`                                         // 真实被调用的后端地址（HTTP URL 或 gRPC 地址）
+	HttpMethod  string  `gorm:"not null;size:64;default:POST" json:"http_method"`                             // HTTP 方法（GET/POST）或 gRPC 完整方法路径
+	Protocol    string  `gorm:"not null;size:10;default:http" json:"protocol"`                                // 协议类型: "http" 或 "grpc"
 	Enabled     bool    `gorm:"not null;default:true" json:"enabled"`                                         // 是否启用
 }
 

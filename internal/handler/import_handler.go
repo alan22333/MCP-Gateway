@@ -14,19 +14,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ImportHandler OpenAPI 导入 handler
+// ImportHandler OpenAPI/Swagger 文档导入 handler
 type ImportHandler struct {
 	repo *repository.ApiToolRepo
 }
 
+// NewImportHandler 创建导入 handler
 func NewImportHandler(repo *repository.ApiToolRepo) *ImportHandler {
 	return &ImportHandler{repo: repo}
 }
 
+// RegisterRoutes 注册导入路由
 func (h *ImportHandler) RegisterRoutes(r gin.IRouter) {
-	r.POST("/api/tools/import", h.Import)
+	r.POST("/tools/import", h.Import)
 }
 
+// Import 处理 OpenAPI/Swagger 文档导入请求
+// 支持两种来源：url（远程抓取）或 spec（直接传 JSON/YAML）
+// 参数 base_url 可指定后端地址，不传则自动从 spec 的 servers 字段检测
+// 参数 tool_names 可指定要导入的工具列表，不传则全量导入
+// 参数 gateway_id 指定工具归属的网关，不传则从 query string 或默认值获取
+// query: ?preview=true 只返回解析预览，不写入数据库
 func (h *ImportHandler) Import(c *gin.Context) {
 	var input struct {
 		URL       string   `json:"url"`
@@ -43,6 +51,7 @@ func (h *ImportHandler) Import(c *gin.Context) {
 		return
 	}
 
+	// 获取 spec 内容：优先 url，其次 spec 字段
 	var specData []byte
 	if input.URL != "" {
 		data, err := httpGet(input.URL)
@@ -64,6 +73,7 @@ func (h *ImportHandler) Import(c *gin.Context) {
 		return
 	}
 
+	// 预览模式：只返回解析结果，不写入数据库
 	if c.Query("preview") == "true" {
 		c.JSON(200, gin.H{
 			"preview": true, "title": result.Title, "base_url": result.BaseURL,
@@ -72,6 +82,7 @@ func (h *ImportHandler) Import(c *gin.Context) {
 		return
 	}
 
+	// 按 tool_names 过滤
 	nameSet := make(map[string]bool)
 	for _, n := range input.ToolNames {
 		nameSet[n] = true
@@ -106,6 +117,7 @@ func (h *ImportHandler) Import(c *gin.Context) {
 	})
 }
 
+// httpGet 发起 HTTP GET 请求，10s 超时，返回响应 body
 func httpGet(rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(rawURL)

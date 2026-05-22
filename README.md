@@ -1,213 +1,182 @@
-# MCP Gateway — AI 模型上下文协议网关平台
+# MCP Nexus — AI 模型上下文协议多协议网关
 
-一个基于 Go 语言开发的 **MCP (Model Context Protocol) 网关中间件**。它的核心作用是将企业内部的 RESTful HTTP API 包装为符合 MCP 协议（JSON-RPC 2.0）的 "Tools"，通过 HTTP 供 AI 大模型调用。
+[![CI](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[![CodeFactor](https://www.codefactor.io/repository/github/alan22333/mcp-gateway/badge)](https://www.codefactor.io/repository/github/alan22333/mcp-gateway)
+将你的 REST API 和 gRPC 服务一键暴露为 AI 可调用的 MCP 工具。支持 OpenAPI 文档导入和 .proto 文件解析。
 
-## 能力总览
-
-| 类别 | 特性 |
-|------|------|
-| **MCP 协议** | JSON-RPC 2.0 完整实现 (initialize / tools/list / tools/call)，**Streamable HTTP** + SSE 双传输 |
-| **HTTP 代理** | resty 代理层，支持 GET/POST/路径参数替换，全链路超时，TraceID 透传 |
-| **多租户** | Gateway 实体抽象，每个网关有独立的工具集和 API Key 认证策略 |
-| **AI 专属** | 参数校验防幻觉、请求去重缓存 (Redis + 内存)、写后缓存失效 |
-| **流量控制** | 令牌桶限流 (per-session)、信号量并发控制、gobreaker 熔断 (按 backend 隔离) |
-| **请求防护** | 请求体大小限制 (http.MaxBytesReader)、API Key 认证中间件 (per-gateway) |
-| **可观测性** | TraceID 全链路、Prometheus /metrics (Counter/Histogram/Gauge) |
-| **配置** | Viper 加载 config.yaml + WatchConfig 热更新 (限流/认证开关实时生效) |
-| **DI** | Google Wire 编译时依赖注入，自动解析依赖图 |
-| **安全** | API Key 认证中间件 (per-gateway、可插拔、豁免路径) |
-| **导入** | OpenAPI 3.0 + Swagger 2.0 一键导入，URL 远程抓取，预览勾选 |
-| **管理后台** | 纯 HTML/JS 单页：网关管理、工具 CRUD、调用测试、日志查看 |
+---
 
 ## 快速开始
 
+### Docker
+
 ```bash
-# 1. 启动模拟企业后端 (订单/客户/库存 API)
-go run cmd/mock-backend/main.go
-
-# 2. 写入种子数据 (3 个网关 + 14 个工具)
-go run cmd/seed/main.go
-
-# 3. 启动网关
-go run cmd/server/main.go
-
-# 4. 打开管理后台
+docker compose up -d
 open http://localhost:8080
-
-# 5. 运行 AI 客户端模拟测试 (SSE + Streamable HTTP 双传输)
-go run cmd/mock-client/main.go
 ```
 
-或一键启动：
+打开后你会看到**引导向导**——选择你的接入方式：
+
+| 你的情况 | 操作 |
+|---------|------|
+| 有 OpenAPI/Swagger 文档 | 点击"OpenAPI 导入"，粘贴文档 URL |
+| 有 .proto 文件和 gRPC 服务 | 点击"gRPC Proto 导入"，粘贴 proto 内容 + 地址 |
+| 都没有，手动配置 | 点击"新建工具"，填写后端 URL 和参数 |
+
+### Go 直接运行
 
 ```bash
-bash scripts/run-all.sh
+go run ./cmd/server/
+# 打开 http://localhost:8080
 ```
 
-## 传输方式
+### 配置你的第一个工具
 
-| 端点 | 方法 | 传输协议 | 说明 |
-|------|------|----------|------|
-| **`/mcp`** | **POST** | **Streamable HTTP** (MCP 2025) | 统一端点，支持 JSON 直接响应 + SSE 流式响应，Mcp-Session-Id header 会话管理 |
-| `/mcp/sse` | GET | SSE (旧版，保留兼容) | SSE 长连接，返回 session_id |
-| `/mcp/message` | POST | SSE (旧版，保留兼容) | 通过 `?session_id=` 发送 JSON-RPC 请求 |
+**方式 1：管理后台导入**（推荐）
 
-**Streamable HTTP 快速测试**：
+打开 `http://localhost:8080` → "导入工具" → 粘贴 OpenAPI 文档 URL → 预览 → 确认导入
 
 ```bash
-# 无状态 JSON 响应
-curl -X POST http://localhost:8080/mcp \
+# 示例：导入一个有 OpenAPI 文档的后端
+curl -X POST http://localhost:8080/api/tools/import \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":"1","method":"initialize"}'
+  -d '{"url":"https://petstore.swagger.io/v2/swagger.json","gateway_id":1}'
+```
 
-# 带 session 的请求
-curl -X POST http://localhost:8080/mcp \
+**方式 2：config.yaml 预配置**
+
+```yaml
+# config.yaml
+backends:
+  - name: my-api
+    openapi_url: https://my-company.com/openapi.json
+    base_url: https://my-company.com/api
+
+  - name: my-grpc
+    grpc_proto: |
+      syntax = "proto3"; package orders;
+      service OrderService { rpc GetOrder(GetOrderRequest) returns (Order); }
+      message GetOrderRequest { string order_id = 1; }
+      message Order { string order_id = 1; string customer = 2; }
+    grpc_addr: grpc.internal:50051
+```
+
+**方式 3：手动创建**
+
+```bash
+curl -X POST http://localhost:8080/api/tools \
   -H "Content-Type: application/json" \
-  -H "Mcp-Session-Id: <uuid-from-initialize>" \
-  -d '{"jsonrpc":"2.0","id":"2","method":"tools/list"}'
-
-# SSE 流式响应
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":"3","method":"tools/list"}'
+  -d '{"gateway_id":1,"tool_name":"get_weather","description":"查询天气","backend_url":"https://api.weather.com/v1/current","http_method":"GET","protocol":"http"}'
 ```
 
-## 架构
+### 连接 AI 客户端
+
+设置你的 MCP 客户端（Claude Desktop / Continue / Cline 等）指向：
 
 ```
-AI 大模型 ←── HTTP ──→ MCP Gateway ── HTTP 代理 ──→ 企业后端 API
-     │                      │
-     │  POST /mcp           ├── Gateway 1 (订单服务): 3 个工具, API Key 认证
-     │  (Streamable HTTP)   ├── Gateway 2 (客户仓库): 4 个工具, 公开
-     │  Mcp-Session-Id      └── Default Gateway:      7 个工具, 公开
-     │
-     └── GET /mcp/sse (旧 SSE 传输，向后兼容)
+http://localhost:8080/mcp
 ```
 
-```
-目录结构:
-├── cmd/
-│   ├── server/main.go        # 网关入口 (Wire DI + RouterGroup)
-│   ├── mock-backend/main.go   # 模拟企业后端
-│   ├── mock-client/main.go    # AI 客户端模拟器 (双传输测试)
-│   └── seed/main.go           # 种子数据 (3 网关 + 14 工具)
-├── internal/
-│   ├── config/                # viper 配置 + 热更新 + 测试
-│   ├── model/                 # GORM 模型 (Gateway, ApiTool, ApiKey, CallLog)
-│   ├── repository/            # 数据访问层 (CRUD + AutoMigrate)
-│   ├── service/               # 核心业务逻辑 (MCP 握手/工具列表/调用)
-│   ├── handler/               # HTTP handlers
-│   │   ├── streamable_handler.go  # Streamable HTTP (POST /mcp)
-│   │   ├── sse_handler.go         # 旧 SSE 传输 (GET /mcp/sse)
-│   │   ├── session.go             # Session 管理器 (限流 + 并发 + TTL 清理)
-│   │   └── ...                    # Gateway/Tool/Key/Import/Log handlers
-│   ├── proxy/                 # HTTP 代理 + 熔断 (gobreaker)
-│   ├── middleware/             # TraceID + Auth + BodyLimit (含测试)
-│   ├── cache/                 # Redis/内存缓存 (分组失效)
-│   └── metrics/               # Prometheus 指标
-├── pkg/
-│   ├── mcp/                   # MCP/JSON-RPC 协议 (InitializeResult, Notification)
-│   ├── openapi/               # OpenAPI 3.0 + Swagger 2.0 解析
-│   └── sse/                   # SSE Writer
-├── web/index.html             # 管理后台前端
-└── config.yaml                # 配置文件 (支持热更新)
-```
+客户端会通过 MCP 协议自动发现你注册的所有工具。
 
-## 更新历程
+---
 
-### v2.1 — Streamable HTTP 传输 + 工程化加固 (2026-05-19)
-- **Streamable HTTP**：MCP 2025 规范统一端点 `POST /mcp`，支持 JSON 直接响应 + SSE 流式
-- `Mcp-Session-Id` header 会话管理，支持有状态/无状态两种模式
-- JSON-RPC Notification 支持 (`notifications/initialized` → 202 Accepted)
-- 协议类型升级：`InitializeResult`/`ServerCapabilities` 类型化，协议版本 `2025-03-26`
-- **Per-Session 并发控制**：channel 信号量限制单 session 并发调用数
-- **请求体大小限制**：`http.MaxBytesReader` 中间件防 DoS
-- **配置热更新**：Viper `WatchConfig()` + `OnConfigChange()` + `atomic.Value` 无锁共享
-- **Wire 依赖注入**：编译时代码生成，Provider Set 分层
-- **分组中间件栈**：`gin.RouterGroup` 按功能分组 (MCP/API/Public)，`gin.IRouter` 接口解耦
-- **项目结构规范化**：`go.mod` 直接依赖修正、文件重命名、middleware/config 测试补全
-- 旧 SSE 传输完整保留向后兼容
+## 核心能力
 
-### v2.0 — 多租户网关平台
-- Gateway 实体抽象，工具按网关分组隔离
-- ApiKey 绑定 Gateway，per-gateway 认证策略
-- 复合唯一索引 (gateway_id, tool_name)
-- 启动时 EnsureDefaultGateway 自动迁移
-- 前端网关选择器 + 按网关过滤
-
-### v1.9 — OpenAPI 导入增强
-- Swagger 2.0 兼容 (openapi2conv)
-- URL 远程抓取 + servers 自动检测
-- 预览 + 选择性导入
-
-### v1.8 — 可观测性
-- TraceID 中间件 + proxy 透传
-- Prometheus /metrics 端点
-- Counter/Histogram/Gauge 三种指标类型
-
-### v1.7 — API Key 认证
-- 可插拔认证中间件
-- Header/Query 双通道取 Key
-- 豁免路径 + 默认演示密钥
-
-### v1.6 — 流量控制 
-- 令牌桶限流 (per-session)
-- gobreaker 熔断 (按 URL group 隔离)
-- 5xx 视为失败触发熔断
-
-### v1.5 — 校验与缓存
-- 参数 Schema 校验防幻觉
-- Redis + 内存双模式请求去重缓存
-- 缓存分组 + 写后失效
-
-### v1.4 — Go 工程底座
-- Context 全链路超时
-- http.Server.Shutdown 优雅启停
-
-### v1.3 — 管理后台
-- 工具 CRUD + 调用测试 + 会话监控
-
-### v1.0 — 基础网关
-- MCP SSE 长连接
-- JSON-RPC 2.0 完整生命周期
-- HTTP 代理转发
-- SQLite + GORM 存储
-
-## 技术栈
-
-| 类别 | 选型 |
+| 类别 | 特性 |
 |------|------|
-| Web 框架 | gin-gonic/gin |
-| HTTP 代理 | go-resty/resty/v2 |
-| DI 框架 | google/wire (编译时) |
-| ORM + DB | gorm.io/gorm + SQLite |
-| 配置 | spf13/viper (热更新) |
-| 日志 | go.uber.org/zap |
-| OpenAPI 解析 | getkin/kin-openapi |
-| 限流 | golang.org/x/time/rate |
-| 熔断 | sony/gobreaker |
-| 缓存 | go-redis/redis/v9 |
-| 指标 | prometheus/client_golang |
-| UUID | google/uuid |
+| **MCP 协议** | Streamable HTTP (MCP 2025) + SSE 向后兼容 |
+| **多协议代理** | HTTP REST (resty) + gRPC (dynamicpb 运行时动态调用) |
+| **工具导入** | OpenAPI 3.0 / Swagger 2.0 / .proto 文件一键解析 |
+| **多租户** | Gateway 实体隔离工具集 + API Key 认证 |
+| **流量控制** | 令牌桶限流 + 信号量并发控制 + gobreaker 熔断 |
+| **缓存** | Redis / 内存双模式请求去重 + 写后失效 |
+| **可观测性** | TraceID 全链路 + Prometheus /metrics + 结构化日志 |
+| **配置** | config.yaml + 热更新 + MCP_ 环境变量覆盖 |
+
+---
+
+## 连接你的后端
+
+### HTTP API
+
+```bash
+# 从 OpenAPI 文档导入
+curl -X POST "http://localhost:8080/api/tools/import?preview=true" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://your-api.com/openapi.json","gateway_id":1}'
+
+# 或手动创建
+curl -X POST http://localhost:8080/api/tools \
+  -H "Content-Type: application/json" \
+  -d '{"gateway_id":1,"tool_name":"my_tool","description":"...","backend_url":"https://your-api.com/endpoint","http_method":"GET","protocol":"http"}'
+```
+
+AI 客户端调用时，网关自动转发：`GET https://your-api.com/endpoint?param=value`
+
+### gRPC 服务
+
+```bash
+# 从 .proto 文件导入
+curl -X POST http://localhost:8080/api/tools/import-grpc \
+  -H "Content-Type: application/json" \
+  -d '{"proto_content":"syntax = \"proto3\"...","addr":"your-grpc:50051","gateway_id":1}'
+```
+
+网关通过 `dynamicpb` 在运行时动态构造 protobuf 消息并调用 gRPC 方法——**不需要你预编译 .proto 或生成 stub 代码**。
+
+---
+
+## 项目结构
+
+```
+├── cmd/server/         # 网关入口
+├── internal/
+│   ├── handler/        # HTTP handlers（MCP / Gateway / Tool / Import / Session）
+│   ├── service/        # 核心业务（多协议调度、参数校验、缓存）
+│   ├── proxy/          # HTTP 代理 + gRPC 动态代理 + 熔断
+│   ├── repository/     # 数据访问层
+│   ├── model/          # GORM 数据模型
+│   ├── middleware/     # TraceID / Auth / BodyLimit
+│   ├── config/         # Viper 配置 + 热更新
+│   ├── cache/          # 缓存接口（内存/Redis）
+│   └── metrics/        # Prometheus 指标
+├── pkg/
+│   ├── mcp/            # JSON-RPC 2.0 协议定义
+│   ├── openapi/        # OpenAPI / Swagger 解析
+│   ├── protobuf/       # .proto 解析 → MCP Tool
+│   └── sse/            # SSE Writer
+├── web/                # 管理后台
+├── config.yaml         # 配置文件
+├── dev/                # 开发工具（mock 后端、种子数据）
+└── docs/               # 学习文档
+```
+
+---
 
 ## 配置参考
 
+所有配置项支持 `MCP_` 前缀环境变量覆盖（Docker 友好）：
+
 ```yaml
 server:
-  port: 8080              # 网关监听端口
-  max_body_bytes: 1048576 # 请求体最大字节数 (默认 1MB)
+  port: 8080
+  max_body_bytes: 1048576
 
 database:
   driver: sqlite
   dsn: gateway.db
 
-cache:
+backends:             # 预注册你的后端服务（启动时自动导入）
+  - name: my-api
+    openapi_url: https://my-api.example.com/openapi.json
+    base_url: https://my-api.example.com
+
+cache:                # Redis 可选，留空使用内存缓存
   enabled: true
-  redis_addr: ""          # 为空则使用内存缓存
-  ttl: 60
+  redis_addr: ""
 
 rate_limit:
   enabled: true
@@ -220,13 +189,32 @@ circuit_breaker:
   timeout: 30
 
 auth:
-  enabled: false          # 演示模式默认关闭
-  exempt_paths:
-    - /
-    - /metrics
-    - /api/health
+  enabled: false      # 演示模式关闭认证
 ```
+
+完整环境变量见 [.env.example](.env.example)。
+
+---
+
+## 技术栈
+
+| 类别 | 选型 |
+|------|------|
+| Web 框架 | gin-gonic/gin |
+| HTTP 代理 | go-resty/resty/v2 |
+| gRPC 动态调用 | google.golang.org/grpc + dynamicpb |
+| Proto 解析 | jhump/protoreflect |
+| ORM + DB | gorm.io/gorm + SQLite |
+| 配置 | spf13/viper (热更新 + 环境变量覆盖) |
+| DI | google/wire (编译时) |
+| 日志 | go.uber.org/zap (结构化 JSON) |
+| 限流 | golang.org/x/time/rate |
+| 熔断 | sony/gobreaker |
+| 缓存 | go-redis/redis/v9 (可选) |
+| 指标 | prometheus/client_golang |
+
+---
 
 ## License
 
-MIT
+MIT — 见 [LICENSE](LICENSE)

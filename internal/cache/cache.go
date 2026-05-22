@@ -63,7 +63,10 @@ func CacheKey(group, toolName string, args json.RawMessage) string {
 	if len(args) > 0 {
 		json.Unmarshal(args, &normalized)
 	}
-	canonical, _ := json.Marshal(normalized)
+	canonical, err := json.Marshal(normalized)
+	if err != nil {
+		canonical = args // fallback: 使用原始 args
+	}
 	h := sha256.Sum256(canonical)
 	return fmt.Sprintf("mcp:cache:%s:%s:%x", group, toolName, h[:8])
 }
