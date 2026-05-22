@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"mcp-gateway-go-demo/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
 
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"

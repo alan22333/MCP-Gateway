@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"mcp-gateway-go-demo/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/model"
 
 	"gorm.io/gorm"
 )

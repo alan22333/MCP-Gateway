@@ -4,9 +4,9 @@ package handler
 import (
 	"encoding/json"
 
-	"mcp-gateway-go-demo/internal/model"
-	"mcp-gateway-go-demo/internal/repository"
-	"mcp-gateway-go-demo/internal/service"
+	"github.com/alan22333/mcp-nexus/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/repository"
+	"github.com/alan22333/mcp-nexus/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

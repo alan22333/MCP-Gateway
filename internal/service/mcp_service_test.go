@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"mcp-gateway-go-demo/internal/cache"
-	"mcp-gateway-go-demo/internal/model"
-	"mcp-gateway-go-demo/internal/proxy"
-	"mcp-gateway-go-demo/internal/repository"
-	"mcp-gateway-go-demo/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/internal/cache"
+	"github.com/alan22333/mcp-nexus/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/proxy"
+	"github.com/alan22333/mcp-nexus/internal/repository"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"

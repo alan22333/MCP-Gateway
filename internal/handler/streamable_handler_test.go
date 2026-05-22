@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"mcp-gateway-go-demo/internal/repository"
-	"mcp-gateway-go-demo/internal/service"
-	"mcp-gateway-go-demo/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/internal/repository"
+	"github.com/alan22333/mcp-nexus/internal/service"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

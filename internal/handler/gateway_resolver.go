@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"mcp-gateway-go-demo/internal/repository"
+	"github.com/alan22333/mcp-nexus/internal/repository"
 
 	"github.com/gin-gonic/gin"
 )

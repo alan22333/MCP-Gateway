@@ -7,12 +7,12 @@ package main
 import (
 	"time"
 
-	"mcp-gateway-go-demo/internal/cache"
-	"mcp-gateway-go-demo/internal/config"
-	"mcp-gateway-go-demo/internal/handler"
-	"mcp-gateway-go-demo/internal/proxy"
-	"mcp-gateway-go-demo/internal/repository"
-	"mcp-gateway-go-demo/internal/service"
+	"github.com/alan22333/mcp-nexus/internal/cache"
+	"github.com/alan22333/mcp-nexus/internal/config"
+	"github.com/alan22333/mcp-nexus/internal/handler"
+	"github.com/alan22333/mcp-nexus/internal/proxy"
+	"github.com/alan22333/mcp-nexus/internal/repository"
+	"github.com/alan22333/mcp-nexus/internal/service"
 
 	"github.com/google/wire"
 	"go.uber.org/zap"

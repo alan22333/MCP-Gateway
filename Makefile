@@ -1,6 +1,6 @@
 .PHONY: build test lint vet clean run docker-build docker-up docker-down help
 
-APP_NAME := mcp-gateway
+APP_NAME := mcp-nexus
 BUILD_DIR := /tmp
 
 # Go parameters

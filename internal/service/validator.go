@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"mcp-gateway-go-demo/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/model"
 )
 
 // ValidationIssue 单个字段的校验问题（会返回给 AI，格式要 AI 能读懂）

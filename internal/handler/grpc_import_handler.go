@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"mcp-gateway-go-demo/internal/model"
-	"mcp-gateway-go-demo/internal/proxy"
-	"mcp-gateway-go-demo/pkg/protobuf"
+	"github.com/alan22333/mcp-nexus/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/proxy"
+	"github.com/alan22333/mcp-nexus/pkg/protobuf"
 
 	"github.com/gin-gonic/gin"
 )

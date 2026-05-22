@@ -211,7 +211,7 @@ const file_orders_proto_rawDesc = "" +
 	"\x05items\x18\x05 \x01(\x05R\x05items2|\n" +
 	"\fOrderService\x122\n" +
 	"\bGetOrder\x12\x17.orders.GetOrderRequest\x1a\r.orders.Order\x128\n" +
-	"\vCreateOrder\x12\x1a.orders.CreateOrderRequest\x1a\r.orders.OrderB2Z0mcp-gateway-go-demo/dev/mock-grpc-backend/ordersb\x06proto3"
+	"\vCreateOrder\x12\x1a.orders.CreateOrderRequest\x1a\r.orders.OrderB2Z0github.com/alan22333/mcp-nexus/dev/mock-grpc-backend/ordersb\x06proto3"
 
 var (
 	file_orders_proto_rawDescOnce sync.Once

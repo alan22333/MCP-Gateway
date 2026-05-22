@@ -3,7 +3,7 @@ package repository
 import (
 	"testing"
 
-	"mcp-gateway-go-demo/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/model"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

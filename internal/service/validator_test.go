@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"mcp-gateway-go-demo/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/model"
 )
 
 func TestValidateArgsAllValid(t *testing.T) {

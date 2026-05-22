@@ -1,6 +1,6 @@
-module mcp-gateway-go-demo
+module github.com/alan22333/mcp-nexus
 
-go 1.25.5
+go 1.25.0
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0

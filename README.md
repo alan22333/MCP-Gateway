@@ -1,6 +1,5 @@
 # MCP Nexus — AI 模型上下文协议多协议网关
 
-
 [![CodeFactor](https://www.codefactor.io/repository/github/alan22333/mcp-gateway/badge)](https://www.codefactor.io/repository/github/alan22333/mcp-gateway)
 [![CI](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
@@ -18,14 +17,6 @@
 docker compose up -d
 open http://localhost:8080
 ```
-
-打开后你会看到**引导向导**——选择你的接入方式：
-
-| 你的情况 | 操作 |
-|---------|------|
-| 有 OpenAPI/Swagger 文档 | 点击"OpenAPI 导入"，粘贴文档 URL |
-| 有 .proto 文件和 gRPC 服务 | 点击"gRPC Proto 导入"，粘贴 proto 内容 + 地址 |
-| 都没有，手动配置 | 点击"新建工具"，填写后端 URL 和参数 |
 
 ### Go 直接运行
 
@@ -219,4 +210,4 @@ auth:
 
 ## License
 
-MIT — 见 [LICENSE](LICENSE)
+[LICENSE](LICENSE)

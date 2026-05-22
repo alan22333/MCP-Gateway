@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"mcp-gateway-go-demo/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
 
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi2conv"

@@ -1,4 +1,4 @@
-# MCP Gateway — production deployment
+# MCP Nexus — production deployment
 # Quick start: docker compose up -d
 #
 # Connect your own backends via:
@@ -9,7 +9,7 @@
 services:
   gateway:
     build: .
-    container_name: mcp-gateway
+    container_name: mcp-nexus
     ports:
       - "8080:8080"
     environment:

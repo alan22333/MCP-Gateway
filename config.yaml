@@ -1,4 +1,4 @@
-# MCP Gateway 配置文件
+# MCP Nexus 配置文件
 server:
   port: 8080              # 网关监听端口
   max_body_bytes: 1048576 # 请求体最大字节数 (默认 1MB)

@@ -7,7 +7,7 @@ import (
 	"net"
 	"os"
 
-	pb "mcp-gateway-go-demo/dev/mock-grpc-backend/orders"
+	pb "github.com/alan22333/mcp-nexus/dev/mock-grpc-backend/orders"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

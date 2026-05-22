@@ -1,5 +1,5 @@
 #!/bin/bash
-# MCP Gateway 全功能接口测试
+# MCP Nexus 全功能接口测试
 # 使用: bash scripts/test-all.sh
 # 前提: 服务已启动 (bash scripts/run-all.sh)
 
@@ -14,7 +14,7 @@ check_contains() { if echo "$1" | grep -q "$2"; then pass "$3"; else fail "$3"; 
 check_gt() { if [ "$1" -gt "$2" ] 2>/dev/null; then pass "$3"; else fail "$3 ($1 <= $2)"; fi; }
 
 echo -e "${BOLD}===========================================${RESET}"
-echo -e "${BOLD}  MCP Gateway — Full API Test Suite${RESET}"
+echo -e "${BOLD}  MCP Nexus — Full API Test Suite${RESET}"
 echo -e "${BOLD}===========================================${RESET}"
 echo ""
 
@@ -36,7 +36,7 @@ metrics=$(curl -s $BASE/metrics)
 check_contains "$metrics" "mcp_sse_sessions_active" "Metrics has mcp_sse_sessions_active gauge"
 
 page=$(curl -s $BASE/)
-check_contains "$page" "MCP Gateway" "GET / → serves admin UI"
+check_contains "$page" "MCP Nexus" "GET / → serves admin UI"
 
 # ── 2. Gateway CRUD ──
 echo -e "${CYAN}── 2. Gateway CRUD${RESET}"

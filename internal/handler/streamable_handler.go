@@ -11,10 +11,10 @@ import (
 	"encoding/json"
 	"strings"
 
-	"mcp-gateway-go-demo/internal/metrics"
-	"mcp-gateway-go-demo/internal/repository"
-	"mcp-gateway-go-demo/pkg/mcp"
-	"mcp-gateway-go-demo/pkg/sse"
+	"github.com/alan22333/mcp-nexus/internal/metrics"
+	"github.com/alan22333/mcp-nexus/internal/repository"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/pkg/sse"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

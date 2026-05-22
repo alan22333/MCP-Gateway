@@ -1,8 +1,8 @@
 package main
 
 import (
-	"mcp-gateway-go-demo/internal/handler"
-	"mcp-gateway-go-demo/internal/middleware"
+	"github.com/alan22333/mcp-nexus/internal/handler"
+	"github.com/alan22333/mcp-nexus/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

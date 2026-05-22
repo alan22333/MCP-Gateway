@@ -1,6 +1,6 @@
 package repository
 
-import "mcp-gateway-go-demo/internal/model"
+import "github.com/alan22333/mcp-nexus/internal/model"
 
 // ====== ApiKey CRUD ======
 

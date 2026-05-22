@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"mcp-gateway-go-demo/internal/cache"
-	"mcp-gateway-go-demo/internal/metrics"
-	"mcp-gateway-go-demo/internal/model"
-	"mcp-gateway-go-demo/internal/proxy"
-	"mcp-gateway-go-demo/pkg/mcp"
+	"github.com/alan22333/mcp-nexus/internal/cache"
+	"github.com/alan22333/mcp-nexus/internal/metrics"
+	"github.com/alan22333/mcp-nexus/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/proxy"
+	"github.com/alan22333/mcp-nexus/pkg/mcp"
 
 	"go.uber.org/zap"
 )
@@ -68,7 +68,7 @@ func (s *McpService) CallTool(ctx context.Context, gatewayID uint, toolName stri
 func (s *McpService) handleInitialize(req *mcp.RPCRequest) *mcp.RPCResponse {
 	result := &mcp.InitializeResult{
 		ProtocolVersion: mcp.ProtocolVersion,
-		ServerInfo:      mcp.ServerInfo{Name: "mcp-gateway-go-demo", Version: "2.0.0"},
+		ServerInfo:      mcp.ServerInfo{Name: "github.com/alan22333/mcp-nexus", Version: "2.0.0"},
 		Capabilities: mcp.ServerCapabilities{
 			Tools: &mcp.ToolsCapability{ListChanged: false},
 		},

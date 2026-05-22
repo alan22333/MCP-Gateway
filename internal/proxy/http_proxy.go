@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"mcp-gateway-go-demo/internal/middleware"
+	"github.com/alan22333/mcp-nexus/internal/middleware"
 
 	"github.com/go-resty/resty/v2"
 )

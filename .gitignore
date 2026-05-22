@@ -54,3 +54,4 @@ vendor/
 *.tmp
 
 dev/
+scripts/

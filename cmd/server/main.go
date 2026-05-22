@@ -1,4 +1,4 @@
-// MCP Gateway — AI 模型上下文协议网关
+// MCP Nexus — AI 模型上下文协议网关
 //
 // 启动流程：
 //   bootstrap() → 装配所有依赖（配置、数据库、缓存、服务、handler）
@@ -37,7 +37,7 @@ func main() {
 
 	// Start
 	go func() {
-		deps.logger.Info("MCP Gateway starting",
+		deps.logger.Info("MCP Nexus starting",
 			zap.String("address", addr),
 			zap.String("dashboard", "http://localhost"+addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

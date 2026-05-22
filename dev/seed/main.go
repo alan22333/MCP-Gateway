@@ -9,8 +9,8 @@ package main
 import (
 	"log"
 
-	"mcp-gateway-go-demo/internal/model"
-	"mcp-gateway-go-demo/internal/repository"
+	"github.com/alan22333/mcp-nexus/internal/model"
+	"github.com/alan22333/mcp-nexus/internal/repository"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

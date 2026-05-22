@@ -1,5 +1,5 @@
 #!/bin/bash
-# MCP Gateway 端到端启动脚本 —— 一键启动所有服务
+# MCP Nexus 端到端启动脚本 —— 一键启动所有服务
 #
 # 启动: bash scripts/run-all.sh
 # 退出时自动清理所有后台进程
@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "==========================================="
-echo "  MCP Gateway — E2E Startup"
+echo "  MCP Nexus — E2E Startup"
 echo "==========================================="
 echo ""
 
@@ -53,7 +53,7 @@ echo "[4/6] Seeding database..."
 echo "  Done"
 
 # 5. Start gateway
-echo "[5/6] Starting MCP Gateway (port 8080)..."
+echo "[5/6] Starting MCP Nexus (port 8080)..."
 /tmp/mcp-gateway > /dev/null 2>&1 &
 GATEWAY_PID=$!
 sleep 2
