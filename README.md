@@ -1,5 +1,7 @@
 # MCP Nexus — AI 模型上下文协议多协议网关
 
+
+[![CodeFactor](https://www.codefactor.io/repository/github/alan22333/mcp-gateway/badge)](https://www.codefactor.io/repository/github/alan22333/mcp-gateway)
 [![CI](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
