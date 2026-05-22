@@ -1,7 +1,7 @@
 # MCP Nexus — AI 模型上下文协议多协议网关
 
 [![CodeFactor](https://www.codefactor.io/repository/github/alan22333/mcp-gateway/badge)](https://www.codefactor.io/repository/github/alan22333/mcp-gateway)
-[![CI](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/alan22333/mcp-gateway/actions/workflows/ci.yml)
+[![CI](https://github.com/alan22333/mcp-nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/alan22333/mcp-nexus/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -9,77 +9,39 @@
 
 ---
 
-## 快速开始
+## 为什么需要 MCP Nexus？
 
-### Docker
+让 AI 调用你的后端服务，需要实现 [MCP 协议](https://spec.modelcontextprotocol.io/)——JSON-RPC 2.0、Streamable HTTP、SSE、工具发现、参数校验……每个服务都自己写一套 MCP Server，成本太高。
+
+MCP Nexus 把这件事搬到网关层：
+
+```text
+AI 客户端 ← MCP 协议 → MCP Nexus 网关 ← HTTP/gRPC → 你的后端服务
+```
+
+你只需要打开管理后台，告诉网关你的 API 地址或上传 OpenAPI/.proto 文件，网关自动生成 MCP 工具定义。AI 客户端连上 `/mcp` 端点就能发现和调用所有工具。
+
+---
+
+## 快速开始
 
 ```bash
 docker compose up -d
 open http://localhost:8080
 ```
 
-### Go 直接运行
+打开管理后台后三步走：
 
-```bash
-go run ./cmd/server/
-# 打开 http://localhost:8080
-```
-
-### 配置你的第一个工具
-
-**方式 1：管理后台导入**（推荐）
-
-打开 `http://localhost:8080` → "导入工具" → 粘贴 OpenAPI 文档 URL → 预览 → 确认导入
-
-```bash
-# 示例：导入一个有 OpenAPI 文档的后端
-curl -X POST http://localhost:8080/api/tools/import \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://petstore.swagger.io/v2/swagger.json","gateway_id":1}'
-```
-
-**方式 2：config.yaml 预配置**
-
-```yaml
-# config.yaml
-backends:
-  - name: my-api
-    openapi_url: https://my-company.com/openapi.json
-    base_url: https://my-company.com/api
-
-  - name: my-grpc
-    grpc_proto: |
-      syntax = "proto3"; package orders;
-      service OrderService { rpc GetOrder(GetOrderRequest) returns (Order); }
-      message GetOrderRequest { string order_id = 1; }
-      message Order { string order_id = 1; string customer = 2; }
-    grpc_addr: grpc.internal:50051
-```
-
-**方式 3：手动创建**
-
-```bash
-curl -X POST http://localhost:8080/api/tools \
-  -H "Content-Type: application/json" \
-  -d '{"gateway_id":1,"tool_name":"get_weather","description":"查询天气","backend_url":"https://api.weather.com/v1/current","http_method":"GET","protocol":"http"}'
-```
-
-### 连接 AI 客户端
-
-设置你的 MCP 客户端（Claude Desktop / Continue / Cline 等）指向：
-
-```
-http://localhost:8080/mcp
-```
-
-客户端会通过 MCP 协议自动发现你注册的所有工具。
+1. **添加工具** — 点击"导入工具"粘贴 OpenAPI 文档地址或 .proto 文件，也可以点"新建工具"手动填写后端 URL
+2. **（可选）创建网关** — 默认已有一个 Default Gateway，你可以为不同团队/项目创建独立网关隔离工具集
+3. **连接 AI 客户端** — 将 Claude / Codex / Cline 等指向 `http://localhost:8080/mcp`
 
 ---
 
-## 核心能力
+## 功能
 
 | 类别 | 特性 |
-|------|------|
+| ---- | ---- |
 | **MCP 协议** | Streamable HTTP (MCP 2025) + SSE 向后兼容 |
 | **多协议代理** | HTTP REST (resty) + gRPC (dynamicpb 运行时动态调用) |
 | **工具导入** | OpenAPI 3.0 / Swagger 2.0 / .proto 文件一键解析 |
@@ -89,42 +51,85 @@ http://localhost:8080/mcp
 | **可观测性** | TraceID 全链路 + Prometheus /metrics + 结构化日志 |
 | **配置** | config.yaml + 热更新 + MCP_ 环境变量覆盖 |
 
+### MCP Streamable HTTP
+
+实现了 MCP 2025 最新规范：单一 `POST /mcp` 端点处理所有 JSON-RPC 请求，根据 `Accept` header 自动返回 JSON 或 SSE 流，通过 `Mcp-Session-Id` header 管理会话。同时保留 `GET /mcp/sse` 端点向后兼容旧版客户端。
+
+### 多协议代理
+
+同一个网关同时支持 HTTP 和 gRPC 后端，根据工具类型自动选择代理方式：
+
+- **HTTP** — 通过 resty 转发，支持 GET/POST/PUT/DELETE，自动将 AI 传参映射到 query string 或 request body
+- **gRPC** — 通过 `dynamicpb` 运行时动态构造 protobuf 消息并调用，**不需要预编译 .proto 或生成 stub 代码**。网关启动时解析 .proto 文件，注册 FileDescriptorSet，调用时通过 gRPC Reflection 发现方法，JSON 参数自动转换为 protobuf 消息
+
+### 工具导入
+
+不用手动填写参数 schema：粘贴 OpenAPI 文档 URL 自动解析所有端点，粘贴 .proto 内容自动解析所有 service method，支持预览模式，确认后批量导入。
+
+### 流量保护
+
+防止 AI 客户端失控循环调用打垮后端：
+
+- **令牌桶限流** — 每 session 独立限流，默认 5 req/s + 10 burst
+- **并发控制** — 信号量限制每 session 同时进行的调用数
+- **熔断** — 后端连续失败 N 次后自动熔断，超时后半开探测，恢复后放行
+
+### 可观测性
+
+每个请求分配唯一 TraceID，贯穿所有结构化日志（zap JSON 格式）。Prometheus `/metrics` 暴露活跃 session 数、调用次数、延迟分布。管理后台可查看每次工具调用的详细记录。
+
 ---
 
-## 连接你的后端
+## 配置参考
 
-### HTTP API
+```yaml
+server:
+  port: 8080
+  max_body_bytes: 1048576   # 请求体上限
 
-```bash
-# 从 OpenAPI 文档导入
-curl -X POST "http://localhost:8080/api/tools/import?preview=true" \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://your-api.com/openapi.json","gateway_id":1}'
+database:
+  driver: sqlite            # sqlite / mysql
+  dsn: gateway.db
 
-# 或手动创建
-curl -X POST http://localhost:8080/api/tools \
-  -H "Content-Type: application/json" \
-  -d '{"gateway_id":1,"tool_name":"my_tool","description":"...","backend_url":"https://your-api.com/endpoint","http_method":"GET","protocol":"http"}'
+# 启动时自动注册的后端服务（可选，也可在管理后台手动添加）
+backends:
+  - name: my-api
+    openapi_url: https://my-api.example.com/openapi.json
+    base_url: https://my-api.example.com
+  - name: my-grpc
+    grpc_proto: |
+      syntax = "proto3"; package orders;
+      service OrderService { rpc GetOrder(GetOrderRequest) returns (Order); }
+      message GetOrderRequest { string order_id = 1; }
+      message Order { string order_id = 1; string customer = 2; }
+    grpc_addr: grpc.internal:50051
+
+cache:
+  enabled: true
+  redis_addr: ""            # 留空使用内存缓存
+  ttl: 60
+
+rate_limit:
+  enabled: true
+  requests_per_second: 5
+  burst: 10
+
+circuit_breaker:
+  enabled: true
+  max_failures: 5
+  timeout: 30
+
+auth:
+  enabled: false            # 设为 true 启用 API Key 认证
 ```
 
-AI 客户端调用时，网关自动转发：`GET https://your-api.com/endpoint?param=value`
-
-### gRPC 服务
-
-```bash
-# 从 .proto 文件导入
-curl -X POST http://localhost:8080/api/tools/import-grpc \
-  -H "Content-Type: application/json" \
-  -d '{"proto_content":"syntax = \"proto3\"...","addr":"your-grpc:50051","gateway_id":1}'
-```
-
-网关通过 `dynamicpb` 在运行时动态构造 protobuf 消息并调用 gRPC 方法——**不需要你预编译 .proto 或生成 stub 代码**。
+所有配置项支持 `MCP_` 前缀环境变量覆盖，例如 `MCP_SERVER_PORT=9090`。
 
 ---
 
 ## 项目结构
 
-```
+```text
 ├── cmd/server/         # 网关入口
 ├── internal/
 │   ├── handler/        # HTTP handlers（MCP / Gateway / Tool / Import / Session）
@@ -149,50 +154,10 @@ curl -X POST http://localhost:8080/api/tools/import-grpc \
 
 ---
 
-## 配置参考
-
-所有配置项支持 `MCP_` 前缀环境变量覆盖（Docker 友好）：
-
-```yaml
-server:
-  port: 8080
-  max_body_bytes: 1048576
-
-database:
-  driver: sqlite
-  dsn: gateway.db
-
-backends:             # 预注册你的后端服务（启动时自动导入）
-  - name: my-api
-    openapi_url: https://my-api.example.com/openapi.json
-    base_url: https://my-api.example.com
-
-cache:                # Redis 可选，留空使用内存缓存
-  enabled: true
-  redis_addr: ""
-
-rate_limit:
-  enabled: true
-  requests_per_second: 5
-  burst: 10
-
-circuit_breaker:
-  enabled: true
-  max_failures: 5
-  timeout: 30
-
-auth:
-  enabled: false      # 演示模式关闭认证
-```
-
-完整环境变量见 [.env.example](.env.example)。
-
----
-
 ## 技术栈
 
 | 类别 | 选型 |
-|------|------|
+| ---- | ---- |
 | Web 框架 | gin-gonic/gin |
 | HTTP 代理 | go-resty/resty/v2 |
 | gRPC 动态调用 | google.golang.org/grpc + dynamicpb |
@@ -203,7 +168,7 @@ auth:
 | 日志 | go.uber.org/zap (结构化 JSON) |
 | 限流 | golang.org/x/time/rate |
 | 熔断 | sony/gobreaker |
-| 缓存 | go-redis/redis/v9 (可选) |
+| 缓存 | go-redis/redis/v9 |
 | 指标 | prometheus/client_golang |
 
 ---
